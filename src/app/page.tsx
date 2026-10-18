@@ -16,19 +16,19 @@ const PRO_STEPS = [...STEPS, "Reading your site", "Building strategies and chann
 export default function Home() {
   const [tier, setTier] = useState<Tier>("free");
   const [form, setForm] = useState({ competitorUrl: "", brandName: "", domain: "", niche: "", audience: "", goal: "", accessCode: "", email: "" });
-  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "stripe" | "code"; price: string; aiEnabled: boolean } | null>(null);
+  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "stripe" | "code"; price: string; aiEnabled: boolean; emailEnabled: boolean } | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [notice, setNotice] = useState("");
   const [paidSession, setPaidSession] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
-  const [report, setReport] = useState<Report | null>(null);
+  const [report, setReport] = useState<(Report & { delivery?: { status: string; to?: string } }) | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/config").then((r) => r.json()).then(setCfg).catch(() => setCfg({ proFreeBeta: true, proGate: "free", price: "", aiEnabled: false }));
+    fetch("/api/config").then((r) => r.json()).then(setCfg).catch(() => setCfg({ proFreeBeta: true, proGate: "free", price: "", aiEnabled: false, emailEnabled: false }));
     // Returning from Stripe Checkout: remember the paid session and build the report.
     const q = new URLSearchParams(window.location.search);
     const sid = q.get("session_id");
@@ -156,6 +156,13 @@ export default function Home() {
         <label htmlFor="competitorUrl">Competitor website</label>
         <input id="competitorUrl" required placeholder="competitor.com" value={form.competitorUrl} onChange={set("competitorUrl")} inputMode="url" autoComplete="off" />
 
+        {tier === "free" && cfg?.emailEnabled && (
+          <>
+            <label htmlFor="email">Your email <span className="opt">(we send the PDF here)</span></label>
+            <input id="email" type="email" required placeholder="you@company.com" value={form.email} onChange={set("email")} autoComplete="email" />
+          </>
+        )}
+
         {tier === "pro" && (
           <>
             <div className="grid2">
@@ -178,10 +185,12 @@ export default function Home() {
             </div>
             <label htmlFor="goal">Main goal for the next 90 days <span className="opt">(optional)</span></label>
             <input id="goal" placeholder="Get 200 trial signups a month" value={form.goal} onChange={set("goal")} />
-            {cfg?.proGate === "stripe" && !showCode && (
+            {(cfg?.emailEnabled || cfg?.proGate === "stripe") && (
               <>
-                <label htmlFor="email">Email for your receipt <span className="opt">(optional)</span></label>
-                <input id="email" type="email" placeholder="you@company.com" value={form.email} onChange={set("email")} autoComplete="email" />
+                <label htmlFor="email">
+                  Your email <span className="opt">({cfg?.emailEnabled ? "we send the PDF here" : "for your receipt"})</span>
+                </label>
+                <input id="email" type="email" required={!!cfg?.emailEnabled} placeholder="you@company.com" value={form.email} onChange={set("email")} autoComplete="email" />
               </>
             )}
             {cfg?.proGate === "code" || showCode ? (
@@ -202,7 +211,12 @@ export default function Home() {
             ? needsCheckout ? "Opening secure checkout…" : "Analysing…"
             : needsCheckout ? `Continue to payment (${cfg?.price})` : tier === "pro" ? "Build my marketing plan" : "Reverse engineer their marketing"}
         </button>
-        {needsCheckout && <p className="note">Secure one-time payment by Stripe. Cards, Apple Pay and Google Pay accepted. Your report starts building as soon as you return.</p>}
+        {needsCheckout && (
+          <p className="note">
+            Secure one-time payment by Stripe. Cards, Apple Pay and Google Pay accepted.
+            {cfg?.emailEnabled ? " Your PDF is emailed to you the moment payment completes." : " Your report starts building as soon as you return."}
+          </p>
+        )}
         {notice && <p className="note" role="status">{notice}</p>}
         {paidSession && !loading && !report && (
           <p className="note">
@@ -225,6 +239,14 @@ export default function Home() {
         <div className="result card" ref={resultRef}>
           <h2>{report.plan ? `${report.plan.brandName} vs ${t.competitor}` : t.competitor}</h2>
           <p className="note" style={{ marginTop: 0 }}>{t.url} · {t.generatedAt.slice(0, 10)} · {t.engine}</p>
+          {report.delivery?.to && report.delivery.status !== "none" && (
+            <p className={report.delivery.status === "failed" ? "error" : "sent"} role="status">
+              {report.delivery.status === "sent" && `📩 We emailed the PDF to ${report.delivery.to}.`}
+              {report.delivery.status === "already" && `📩 We already emailed this PDF to ${report.delivery.to}.`}
+              {report.delivery.status === "pending" && `📩 Your PDF is on its way to ${report.delivery.to}. It usually arrives within a minute or two.`}
+              {report.delivery.status === "failed" && `We could not email ${report.delivery.to}. Use the download button below.`}
+            </p>
+          )}
           <div className="summary">{t.summary}</div>
 
           <h3>Channel map</h3>

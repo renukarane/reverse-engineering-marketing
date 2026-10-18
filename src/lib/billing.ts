@@ -77,18 +77,64 @@ export async function createCheckout(inputs: ProInputs, origin: string, email?: 
   return session.url;
 }
 
-/** Returns the paid-for inputs, or null if the session is unpaid, expired or malformed. */
-export async function paidInputs(sessionId: string): Promise<ProInputs | null> {
-  if (!/^cs_(test|live)_[A-Za-z0-9]{10,200}$/.test(sessionId)) return null;
-  let session: Stripe.Checkout.Session;
-  try {
-    session = await stripe().checkout.sessions.retrieve(sessionId);
-  } catch {
-    return null;
-  }
+export interface PaidSession {
+  inputs: ProInputs;
+  email: string | null;
+  paymentIntentId: string | null;
+  /** Unix seconds when the Checkout Session was created. */
+  created: number;
+}
+
+export function webhookConfigured(): boolean {
+  return !!process.env.STRIPE_WEBHOOK_SECRET;
+}
+
+/** Validates a completed Checkout Session object (from retrieve or a webhook event). */
+export function paidFromSession(session: Stripe.Checkout.Session): PaidSession | null {
   if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") return null;
   if (Date.now() / 1000 - session.created > SESSION_VALID_DAYS * 86400) return null;
   const m = session.metadata ?? {};
   if (!m.competitorUrl || !m.brandName || !m.domain) return null;
-  return { competitorUrl: m.competitorUrl, brandName: m.brandName, domain: m.domain, niche: m.niche, audience: m.audience, goal: m.goal };
+  const pi = session.payment_intent;
+  return {
+    inputs: { competitorUrl: m.competitorUrl, brandName: m.brandName, domain: m.domain, niche: m.niche, audience: m.audience, goal: m.goal },
+    email: session.customer_details?.email ?? session.customer_email ?? null,
+    paymentIntentId: typeof pi === "string" ? pi : pi?.id ?? null,
+    created: session.created,
+  };
+}
+
+/** Returns the paid session, or null if it is unpaid, expired or malformed. */
+export async function paidSession(sessionId: string): Promise<PaidSession | null> {
+  if (!/^cs_(test|live)_[A-Za-z0-9]{10,200}$/.test(sessionId)) return null;
+  try {
+    return paidFromSession(await stripe().checkout.sessions.retrieve(sessionId));
+  } catch {
+    return null;
+  }
+}
+
+/** Kept for callers that only need the inputs. */
+export async function paidInputs(sessionId: string): Promise<ProInputs | null> {
+  return (await paidSession(sessionId))?.inputs ?? null;
+}
+
+// The "report emailed" flag lives on the PaymentIntent's metadata so a rebuild or a
+// webhook retry never sends the same paid report twice. No database needed.
+export async function alreadyEmailed(paymentIntentId: string | null): Promise<boolean> {
+  if (!paymentIntentId) return false;
+  try {
+    const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
+    return !!pi.metadata?.report_emailed_at;
+  } catch {
+    return false;
+  }
+}
+
+export async function markEmailed(paymentIntentId: string | null, value = new Date().toISOString()): Promise<void> {
+  if (!paymentIntentId) return;
+  // An empty string removes the key, which releases a claim after a failed send.
+  await stripe().paymentIntents.update(paymentIntentId, { metadata: { report_emailed_at: value } }).catch((e) => {
+    console.warn("[billing] could not flag emailed:", (e as Error).message);
+  });
 }

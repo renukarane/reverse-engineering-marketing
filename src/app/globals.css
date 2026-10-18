@@ -89,3 +89,4 @@ td, th { text-align: left; vertical-align: top; padding: 8px 6px; border-bottom:
 .scroll { overflow-x: auto; }
 footer { color: var(--muted); font-size: 13px; padding: 30px 0 50px; text-align: center; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); text-decoration: underline; cursor: pointer; }
+.sent { background: var(--soft); color: var(--ink); border-left: 3px solid var(--ok); padding: 10px 12px; border-radius: 8px; font-size: 14px; margin: 12px 0; }

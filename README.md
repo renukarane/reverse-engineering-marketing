@@ -79,6 +79,14 @@ How it works, with no database:
 5. Test with card `4242 4242 4242 4242`, any future date and any CVC.
 6. When ready, complete account activation, then swap in the `sk_live_...` key.
 
+### Webhook (instant paid delivery)
+
+1. In Stripe, go to Developers, then Webhooks, and add an endpoint at `https://YOUR_APP/api/stripe/webhook`.
+2. Select the events `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
+3. Copy the signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
+
+The webhook verifies Stripe's signature and replies right away. It then builds the report in the background (Next.js `after()`) and emails it, so the buyer gets the PDF even if they close the tab after paying. For local testing, use `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+
 ### Gating modes (`proGate()` in `src/lib/billing.ts`)
 
 | `PRO_FREE_BETA` | `STRIPE_SECRET_KEY` | Full report |
@@ -93,6 +101,31 @@ Access codes in `PRO_ACCESS_CODES` unlock the full report in every mode, which i
 ### Sales tax
 
 Set `STRIPE_AUTOMATIC_TAX=true` after enabling Stripe Tax in the dashboard. Whether you must collect sales tax depends on the states you have nexus in, so check with an accountant.
+
+## Email delivery (Resend)
+
+Reports are emailed as PDF attachments through [Resend](https://resend.com). The free plan covers 3,000 emails a month (100 a day).
+
+| Report | When it is emailed | Email address used |
+|---|---|---|
+| Free teardown | As soon as it is built. Email becomes a required field, so this is your lead capture. | The one typed in the form |
+| Paid full plan | By the Stripe webhook the moment payment completes | The one the buyer entered at Stripe Checkout |
+| Paid, no webhook set | When the buyer lands back on the site | The one the buyer entered at Stripe Checkout |
+| Access-code report | As soon as it is built, if an email is given | The one typed in the form |
+
+A paid report is emailed **once per payment**:
+- A `report_emailed_at` flag is stored on the Stripe PaymentIntent's metadata, so there is still no database.
+- An in-flight guard stops webhook retries and page rebuilds from sending duplicates.
+- If the webhook fails, the success page sends the PDF itself once the payment is more than 5 minutes old and still unsent.
+
+Each email address gets at most 3 free reports an hour.
+
+**Setup:**
+1. Create a Resend account.
+2. Verify your sending domain by adding the DNS records Resend gives you.
+3. Set `RESEND_API_KEY` and `EMAIL_FROM`, for example `MarketMirror <reports@yourdomain.com>`.
+
+Until your domain is verified, Resend only delivers to your own account address.
 
 ## Security
 
@@ -111,9 +144,11 @@ The server fetches URLs that users type in, so every request goes through `src/l
 ```bash
 node tests/fixtures/server.mjs &              # fake competitor site on :4321
 PORT=4400 node tests/fixtures/mock-llm.mjs &  # fake OpenAI-compatible LLM
-PORT=4500 node tests/fixtures/mock-stripe.mjs & # fake Stripe Checkout API
+PORT=4500 node tests/fixtures/mock-stripe.mjs & # fake Stripe Checkout + PaymentIntents API
+PORT=4600 node tests/fixtures/mock-resend.mjs & # fake Resend; GET :4600/__sent lists sent emails
 ALLOW_PRIVATE_FETCH=true OPENAI_COMPAT_BASE_URL=http://127.0.0.1:4400/v1 \
-  STRIPE_SECRET_KEY=sk_test_dummy STRIPE_API_BASE=http://127.0.0.1:4500 npm run dev
+  STRIPE_SECRET_KEY=sk_test_dummy STRIPE_API_BASE=http://127.0.0.1:4500 STRIPE_WEBHOOK_SECRET=whsec_test \
+  RESEND_API_KEY=re_test RESEND_API_BASE=http://127.0.0.1:4600 EMAIL_FROM="Test <t@example.com>" npm run dev
 curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
   -d '{"competitorUrl":"http://127.0.0.1:4321","tier":"pro","brandName":"Acme","domain":"acme.com"}'
 ```
@@ -124,11 +159,12 @@ curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
 - **Bot blocking:** some sites (Cloudflare challenges, etc.) block automated readers.
 - **No paid SEO data:** there is no traffic, keyword or backlink data. Adding Ahrefs/Semrush/DataForSEO APIs is a natural Pro upgrade.
 - **No ad library or social data:** ad libraries and social engagement aren't fetched. The report points users to the public ad libraries instead.
-- **Reports are not stored:** the PDF is rendered from the report the browser holds. A webhook that emails the PDF after payment would be a good next step.
+- **Reports are not stored:** the PDF is rendered from the report the browser holds, and a copy goes out by email.
 
 ## API
 
-- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", brandName?, domain?, niche?, audience?, goal?, accessCode?, sessionId? }` returns a report as JSON. It returns 402 when payment is needed.
+- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", email?, brandName?, domain?, niche?, audience?, goal?, accessCode?, sessionId? }` returns a report as JSON, plus `delivery: { status: "sent"|"already"|"pending"|"failed"|"none", to? }`. It returns 402 when payment is needed.
 - `POST /api/checkout` with `{ competitorUrl, brandName, domain, niche?, audience?, goal?, email? }` returns `{ url }` for Stripe Checkout.
 - `POST /api/report` with that report JSON returns the `application/pdf`.
-- `GET /api/config` returns `{ proFreeBeta, proGate, price, aiEnabled }`.
+- `POST /api/stripe/webhook` is the Stripe webhook. It builds and emails paid reports.
+- `GET /api/config` returns `{ proFreeBeta, proGate, price, aiEnabled, emailEnabled }`.
