@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { proAllowed } from "@/lib/access";
+import { validAccessCode } from "@/lib/access";
 import { analyze } from "@/lib/analyze";
+import { paidInputs, proGate } from "@/lib/billing";
 import { rateLimit } from "@/lib/rateLimit";
 import { FetchBlockedError, normalizeUrl } from "@/lib/safeFetch";
 
@@ -10,7 +11,7 @@ export const maxDuration = 60;
 
 const field = (max: number) => z.string().trim().max(max).optional();
 const Body = z.object({
-  competitorUrl: z.string().trim().min(3).max(300),
+  competitorUrl: z.string().trim().max(300).default(""),
   tier: z.enum(["free", "pro"]).default("free"),
   brandName: field(80),
   domain: field(200),
@@ -19,6 +20,7 @@ const Body = z.object({
   goal: field(200),
   budget: field(80),
   accessCode: field(100),
+  sessionId: field(260),
 });
 
 function clientIp(req: Request): string {
@@ -28,7 +30,16 @@ function clientIp(req: Request): string {
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Please enter a valid competitor URL." }, { status: 400 });
-  const b = parsed.data;
+  let b = parsed.data;
+
+  // A paid Stripe session carries its own inputs; they override anything sent.
+  if (b.sessionId) {
+    if (proGate() !== "stripe") return NextResponse.json({ error: "Payments are not enabled." }, { status: 400 });
+    const paid = await paidInputs(b.sessionId);
+    if (!paid) return NextResponse.json({ error: "We could not confirm that payment, or it is more than 7 days old.", code: "PAYWALL" }, { status: 402 });
+    b = { ...b, ...paid, tier: "pro" };
+  }
+  if (b.competitorUrl.length < 3) return NextResponse.json({ error: "Please enter a valid competitor URL." }, { status: 400 });
 
   try {
     normalizeUrl(b.competitorUrl);
@@ -41,11 +52,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  if (b.tier === "pro" && !proAllowed(b.accessCode)) {
-    return NextResponse.json({ error: "The full report needs a valid access code.", code: "PAYWALL" }, { status: 402 });
+  if (b.tier === "pro" && !b.sessionId && proGate() !== "free" && !validAccessCode(b.accessCode)) {
+    return NextResponse.json(
+      { error: proGate() === "stripe" ? "The full report needs payment." : "The full report needs a valid access code.", code: "PAYWALL" },
+      { status: 402 },
+    );
   }
 
-  const rl = rateLimit(clientIp(req));
+  // Paying customers are limited per purchase, not per network.
+  const rl = b.sessionId ? rateLimit(`session:${b.sessionId}`, 5) : rateLimit(clientIp(req));
   if (!rl.ok) {
     return NextResponse.json({ error: `Too many reports from your network. Try again in ${Math.ceil(rl.retryAfterSec / 60)} minutes.` }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
   }

@@ -3,7 +3,7 @@
 Paste a competitor's URL and get their reverse-engineered marketing as a PDF.
 Add your brand and domain and get a full end-to-end marketing plan built from it.
 
-| | Free teardown | Full plan (Pro, free during beta) |
+| | Free teardown | Full plan (Pro, one-time Stripe payment) |
 |---|---|---|
 | Input | Competitor URL | Competitor URL + your brand name + your domain (+ optional niche, audience, goal) |
 | Output | ~7 page PDF | ~17 page PDF |
@@ -60,13 +60,39 @@ Vercel Hobby works out of the box:
 
 The API routes set `maxDuration = 60`.
 
-## Paid tier
+## Payments (Stripe)
 
-The paid tier is gated but free for now:
-- `PRO_FREE_BETA=true` (the default) unlocks the full plan for everyone.
-- `PRO_FREE_BETA=false` requires an access code from `PRO_ACCESS_CODES` (comma-separated). This is a stand-in until payments are added.
+The full report is a **one-time Stripe Checkout payment per report** (default $19). Stripe fully supports US businesses and customers. Cards, Apple Pay, Google Pay and Link work out of the box, and promo codes are enabled.
 
-The paywall check lives in `src/lib/access.ts` and `src/app/api/analyze/route.ts`, where it returns HTTP 402. To add payments, have a Stripe or Lemon Squeezy checkout webhook issue codes or set a signed cookie, then check it there.
+How it works, with no database:
+1. The user fills in the Pro form. `POST /api/checkout` validates the URLs and creates a Checkout Session. The report inputs (competitor URL, brand, domain, niche, audience, goal) are stored in the session's `metadata`.
+2. The user pays on Stripe's hosted page. Stripe sends them back to `/?session_id=cs_...`.
+3. The page calls `/api/analyze` with that `sessionId`. The server retrieves the session from Stripe, checks `payment_status === "paid"`, and builds the report from the **metadata, not from the browser**. A session id can therefore only rebuild the report it paid for.
+4. The session id is kept in the browser for 7 days, so the user can rebuild the report if they close the tab. Each paid session is limited to 5 builds an hour.
+
+### Setup
+
+1. Create a Stripe account at https://dashboard.stripe.com (a US business entity or sole proprietor works).
+2. In test mode, copy the secret key (`sk_test_...`) into `STRIPE_SECRET_KEY`.
+3. Optional: set `PRO_PRICE_CENTS`, or create a Product and Price in the dashboard and set `STRIPE_PRICE_ID`.
+4. Set `NEXT_PUBLIC_APP_URL` to your deployed URL.
+5. Test with card `4242 4242 4242 4242`, any future date and any CVC.
+6. When ready, complete account activation, then swap in the `sk_live_...` key.
+
+### Gating modes (`proGate()` in `src/lib/billing.ts`)
+
+| `PRO_FREE_BETA` | `STRIPE_SECRET_KEY` | Full report |
+|---|---|---|
+| unset | unset | Free (beta) |
+| unset | set | Paid via Stripe |
+| `true` | any | Free |
+| `false` | unset | Access code only |
+
+Access codes in `PRO_ACCESS_CODES` unlock the full report in every mode, which is useful for testers and comps.
+
+### Sales tax
+
+Set `STRIPE_AUTOMATIC_TAX=true` after enabling Stripe Tax in the dashboard. Whether you must collect sales tax depends on the states you have nexus in, so check with an accountant.
 
 ## Security
 
@@ -85,7 +111,9 @@ The server fetches URLs that users type in, so every request goes through `src/l
 ```bash
 node tests/fixtures/server.mjs &              # fake competitor site on :4321
 PORT=4400 node tests/fixtures/mock-llm.mjs &  # fake OpenAI-compatible LLM
-ALLOW_PRIVATE_FETCH=true OPENAI_COMPAT_BASE_URL=http://127.0.0.1:4400/v1 npm run dev
+PORT=4500 node tests/fixtures/mock-stripe.mjs & # fake Stripe Checkout API
+ALLOW_PRIVATE_FETCH=true OPENAI_COMPAT_BASE_URL=http://127.0.0.1:4400/v1 \
+  STRIPE_SECRET_KEY=sk_test_dummy STRIPE_API_BASE=http://127.0.0.1:4500 npm run dev
 curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
   -d '{"competitorUrl":"http://127.0.0.1:4321","tier":"pro","brandName":"Acme","domain":"acme.com"}'
 ```
@@ -96,10 +124,11 @@ curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
 - **Bot blocking:** some sites (Cloudflare challenges, etc.) block automated readers.
 - **No paid SEO data:** there is no traffic, keyword or backlink data. Adding Ahrefs/Semrush/DataForSEO APIs is a natural Pro upgrade.
 - **No ad library or social data:** ad libraries and social engagement aren't fetched. The report points users to the public ad libraries instead.
-- **Reports are not stored:** the PDF is rendered from the report the browser holds.
+- **Reports are not stored:** the PDF is rendered from the report the browser holds. A webhook that emails the PDF after payment would be a good next step.
 
 ## API
 
-- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", brandName?, domain?, niche?, audience?, goal?, accessCode? }` returns a report as JSON.
+- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", brandName?, domain?, niche?, audience?, goal?, accessCode?, sessionId? }` returns a report as JSON. It returns 402 when payment is needed.
+- `POST /api/checkout` with `{ competitorUrl, brandName, domain, niche?, audience?, goal?, email? }` returns `{ url }` for Stripe Checkout.
 - `POST /api/report` with that report JSON returns the `application/pdf`.
-- `GET /api/config` returns `{ proFreeBeta, aiEnabled }`.
+- `GET /api/config` returns `{ proFreeBeta, proGate, price, aiEnabled }`.

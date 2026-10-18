@@ -15,8 +15,11 @@ const PRO_STEPS = [...STEPS, "Reading your site", "Building strategies and chann
 
 export default function Home() {
   const [tier, setTier] = useState<Tier>("free");
-  const [form, setForm] = useState({ competitorUrl: "", brandName: "", domain: "", niche: "", audience: "", goal: "", accessCode: "" });
-  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; aiEnabled: boolean } | null>(null);
+  const [form, setForm] = useState({ competitorUrl: "", brandName: "", domain: "", niche: "", audience: "", goal: "", accessCode: "", email: "" });
+  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "stripe" | "code"; price: string; aiEnabled: boolean } | null>(null);
+  const [showCode, setShowCode] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [paidSession, setPaidSession] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
@@ -25,7 +28,24 @@ export default function Home() {
   const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/config").then((r) => r.json()).then(setCfg).catch(() => setCfg({ proFreeBeta: true, aiEnabled: false }));
+    fetch("/api/config").then((r) => r.json()).then(setCfg).catch(() => setCfg({ proFreeBeta: true, proGate: "free", price: "", aiEnabled: false }));
+    // Returning from Stripe Checkout: remember the paid session and build the report.
+    const q = new URLSearchParams(window.location.search);
+    const sid = q.get("session_id");
+    if (q.get("canceled")) setNotice("Checkout canceled. You were not charged.");
+    let saved: string | null = null;
+    try {
+      if (sid) localStorage.setItem("mm_paid_session", sid);
+      saved = localStorage.getItem("mm_paid_session");
+    } catch {
+      /* storage blocked */
+    }
+    if (sid || q.get("canceled")) window.history.replaceState(null, "", "/");
+    if (sid) {
+      setTier("pro");
+      run({ sessionId: sid, tier: "pro" });
+    } else if (saved) setPaidSession(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const steps = tier === "pro" ? PRO_STEPS : STEPS;
@@ -38,19 +58,42 @@ export default function Home() {
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
+  const needsCheckout = tier === "pro" && cfg?.proGate === "stripe" && !(showCode && form.accessCode);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (needsCheckout) return checkout();
+    return run({ ...form, tier });
+  }
+
+  async function checkout() {
     setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error || "Could not start checkout.");
+      window.location.href = data.url;
+    } catch (err) {
+      setError((err as Error).message);
+      setLoading(false);
+    }
+  }
+
+  async function run(payload: Record<string, string>) {
+    setError("");
+    setNotice("");
     setReport(null);
     setLoading(true);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...form, tier }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
+      if (payload.sessionId) setPaidSession(null);
       setReport(data);
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (err) {
@@ -105,7 +148,7 @@ export default function Home() {
             <small>Competitor's reverse-engineered marketing, PDF</small>
           </button>
           <button type="button" role="tab" className="tab" aria-selected={tier === "pro"} onClick={() => setTier("pro")}>
-            <b>Full plan {cfg?.proFreeBeta ? "(free in beta)" : "(Pro)"}</b>
+            <b>Full plan {cfg?.proFreeBeta ? "(free in beta)" : cfg?.price ? `(${cfg.price})` : "(Pro)"}</b>
             <small>Teardown plus your end-to-end marketing plan</small>
           </button>
         </div>
@@ -135,18 +178,38 @@ export default function Home() {
             </div>
             <label htmlFor="goal">Main goal for the next 90 days <span className="opt">(optional)</span></label>
             <input id="goal" placeholder="Get 200 trial signups a month" value={form.goal} onChange={set("goal")} />
-            {cfg && !cfg.proFreeBeta && (
+            {cfg?.proGate === "stripe" && !showCode && (
+              <>
+                <label htmlFor="email">Email for your receipt <span className="opt">(optional)</span></label>
+                <input id="email" type="email" placeholder="you@company.com" value={form.email} onChange={set("email")} autoComplete="email" />
+              </>
+            )}
+            {cfg?.proGate === "code" || showCode ? (
               <>
                 <label htmlFor="accessCode">Access code</label>
                 <input id="accessCode" required value={form.accessCode} onChange={set("accessCode")} />
               </>
-            )}
+            ) : cfg?.proGate === "stripe" ? (
+              <p className="note">
+                <button type="button" className="linkish" onClick={() => setShowCode(true)}>Have an access code?</button>
+              </p>
+            ) : null}
           </>
         )}
 
         <button className="btn full" disabled={loading}>
-          {loading ? "Analysing…" : tier === "pro" ? "Build my marketing plan" : "Reverse engineer their marketing"}
+          {loading
+            ? needsCheckout ? "Opening secure checkout…" : "Analysing…"
+            : needsCheckout ? `Continue to payment (${cfg?.price})` : tier === "pro" ? "Build my marketing plan" : "Reverse engineer their marketing"}
         </button>
+        {needsCheckout && <p className="note">Secure one-time payment by Stripe. Cards, Apple Pay and Google Pay accepted. Your report starts building as soon as you return.</p>}
+        {notice && <p className="note" role="status">{notice}</p>}
+        {paidSession && !loading && !report && (
+          <p className="note">
+            You have a paid report from the last 7 days.{" "}
+            <button type="button" className="linkish" onClick={() => run({ sessionId: paidSession, tier: "pro" })}>Rebuild it</button>
+          </p>
+        )}
         {error && <p className="error" role="alert">{error}</p>}
         {loading && (
           <ul className="steps" aria-live="polite">
@@ -208,7 +271,7 @@ export default function Home() {
           {!report.plan && (
             <div className="upsell">
               <b>Want the plan, not just the teardown?</b>
-              <p className="note">Add your brand and domain. We will turn {t.competitor}&apos;s playbook into your positioning, strategies, 30/60/90 execution plan, content calendar, SEO keywords, ad angles and email sequence.</p>
+              <p className="note">{cfg?.proGate === "stripe" ? `One-time ${cfg.price}. ` : ""}Add your brand and domain. We will turn {t.competitor}&apos;s playbook into your positioning, strategies, 30/60/90 execution plan, content calendar, SEO keywords, ad angles and email sequence.</p>
             </div>
           )}
         </div>

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { proIsFreeBeta } from "@/lib/access";
 import { aiConfigured } from "@/lib/ai";
+import { priceLabel, proGate } from "@/lib/billing";
 
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return NextResponse.json({ proFreeBeta: proIsFreeBeta(), aiEnabled: aiConfigured() });
+  const gate = proGate();
+  return NextResponse.json({ proFreeBeta: gate === "free", proGate: gate, price: priceLabel(), aiEnabled: aiConfigured() });
 }

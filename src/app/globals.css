@@ -88,3 +88,4 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 td, th { text-align: left; vertical-align: top; padding: 8px 6px; border-bottom: 1px solid var(--line); }
 .scroll { overflow-x: auto; }
 footer { color: var(--muted); font-size: 13px; padding: 30px 0 50px; text-align: center; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); text-decoration: underline; cursor: pointer; }
