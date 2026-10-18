@@ -53,12 +53,23 @@ npm run build                # production build
 
 ## Deploy (free)
 
-Vercel Hobby works out of the box:
-1. Import the repo.
-2. Add the env vars from `.env.example`.
-3. Deploy.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing&project-name=marketmirror&env=GROQ_API_KEY&envDescription=Free%20Groq%20key%20for%20AI%20analysis%20(console.groq.com%2Fkeys).%20Add%20Stripe%20and%20Resend%20keys%20later.&envLink=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing%2Fblob%2Fmain%2F.env.example)
 
-The API routes set `maxDuration = 60`.
+Or import the existing repo, so Vercel deploys on every push to `main`:
+1. At https://vercel.com/new, choose **Import Git Repository** and pick `renukarane/reverse-engineering-marketing`. Vercel detects Next.js; keep the defaults.
+2. Under **Environment Variables**, add `GROQ_API_KEY` (and/or `GEMINI_API_KEY`). That is enough for a first test.
+3. Click **Deploy**. You get a `https://<project>.vercel.app` URL in about a minute.
+4. Set `NEXT_PUBLIC_APP_URL` to that URL and redeploy.
+
+The Hobby plan is free and the API routes set `maxDuration = 60`.
+
+**Test stages:**
+
+| Stage | Add these env vars | What you can test |
+|---|---|---|
+| 1. Free reports | `GROQ_API_KEY` | Free teardown plus the full plan (free while Stripe is unset) |
+| 2. Email | `RESEND_API_KEY`, `EMAIL_FROM` | The PDF arrives by email |
+| 3. Payments | `STRIPE_SECRET_KEY` (test), `STRIPE_WEBHOOK_SECRET` | Paying with `4242 4242 4242 4242` emails the full plan |
 
 ## Payments (Stripe)
 
