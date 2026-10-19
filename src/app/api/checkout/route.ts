@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   }
   try {
     const order = await createOrder(inputs, email || undefined);
-    return NextResponse.json({ ...order, name: "MarketMirror", description: `Full marketing plan (${priceLabel()})`, email: email || "" });
+    return NextResponse.json({ ...order, name: "Marketing Scholars", description: `Full marketing plan (${priceLabel()})`, email: email || "" });
   } catch (e) {
     console.error("[checkout]", e);
     return NextResponse.json({ error: "Could not start payment. Please try again." }, { status: 502 });

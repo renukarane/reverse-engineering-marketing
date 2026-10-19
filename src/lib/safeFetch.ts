@@ -11,7 +11,7 @@ const MAX_BYTES = 2_500_000;
 const TIMEOUT_MS = 12_000;
 const MAX_REDIRECTS = 4;
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; MarketMirrorBot/0.1; +https://github.com/renukarane/reverse-engineering-marketing)";
+  "Mozilla/5.0 (compatible; MarketingScholarsBot/0.1; +https://github.com/renukarane/reverse-engineering-marketing)";
 
 export class FetchBlockedError extends Error {}
 

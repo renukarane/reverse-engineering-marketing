@@ -210,6 +210,7 @@ h3 { margin: 0 0 6px; font-size: 18px; }
   margin: 0 0 18px;
 }
 .hero h1 .accent { color: var(--muted); font-weight: 600; }
+.editorial .hero h1 .accent { color: var(--brand); font-weight: 800; }
 .sub { font-size: clamp(17px, 1.6vw, 20px); color: var(--muted); max-width: 620px; margin: 0 0 16px; }
 .trust { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 0; margin: 4px 0 18px; font-size: 14px; }
 .lp .gen label { text-align: left; }
@@ -449,4 +450,25 @@ h3 { margin: 0 0 6px; font-size: 18px; }
   .chip-out, .pdf { opacity: 1; transform: none; }
   .typed { width: 14ch; }
   .editorial h1 .hl { background-size: 100% 100%; }
+}
+
+/* Founder note */
+.founder { padding-top: 40px; }
+.founder-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: clamp(22px, 4vw, 44px); max-width: 860px; margin: 0 auto; }
+.editorial .founder-card { border: 2px solid var(--ink); box-shadow: var(--card-shadow); }
+.founder-head { display: flex; gap: 20px; align-items: center; margin-bottom: 18px; }
+.founder-head h2 { margin: 0; font-size: clamp(24px, 3.2vw, 34px); }
+.founder-head .kicker { margin-bottom: 10px; }
+.avatar { width: 88px; height: 88px; border-radius: 50%; object-fit: cover; flex: none; border: 3px solid var(--ink); }
+.avatar.mono { display: inline-grid; place-items: center; background: var(--brand-3); color: var(--ink); font-family: var(--display); font-weight: 800; font-size: 30px; }
+.founder-story p { font-size: 18px; line-height: 1.65; margin: 0 0 14px; }
+.founder-story p:first-child::first-letter { font-family: var(--display); font-size: 3.1em; font-weight: 800; float: left; line-height: 0.85; margin: 6px 8px 0 0; color: var(--brand); }
+.founder-sign { display: grid; gap: 4px; margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--line); }
+.editorial .founder-sign { border-top-color: color-mix(in srgb, var(--ink) 30%, transparent); }
+.founder-sign .sig { font-family: "Segoe Script", "Brush Script MT", "Snell Roundhand", cursive; font-size: 30px; line-height: 1.1; color: var(--ink); }
+.founder-sign a { font-weight: 700; color: var(--brand); text-decoration: none; width: fit-content; }
+@media (max-width: 640px) {
+  .founder-head { flex-direction: column; align-items: flex-start; }
+  .avatar { width: 72px; height: 72px; }
+  .founder-story p { font-size: 17px; }
 }

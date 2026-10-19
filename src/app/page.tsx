@@ -1,4 +1,5 @@
 import { cookies, headers } from "next/headers";
+import FounderAvatar from "@/components/FounderAvatar";
 import Generator from "@/components/Generator";
 import LandingEffects from "@/components/LandingEffects";
 import ScannerVisual from "@/components/ScannerVisual";
@@ -64,7 +65,7 @@ export default async function Home() {
       <header className="nav">
         <div className="nav-in">
           <a className="brand" href="#top">
-            <span className="mark" aria-hidden="true" /> Market<b>Mirror</b>
+            <span className="mark" aria-hidden="true" /> Marketing <b>Scholars</b>
           </a>
           <a className="nav-cta" href="#start" data-track="cta:nav">
             {c.cta}
@@ -208,6 +209,42 @@ export default async function Home() {
           </div>
         </section>
 
+        <section className="founder" aria-labelledby="founder-h">
+          <div className="founder-card reveal">
+            <div className="founder-head">
+              <FounderAvatar name="Renuka R. Rane" initials="RR" />
+              <div>
+                <p className="kicker">A note from the founder</p>
+                <h2 id="founder-h">Every brand transformation I&apos;ve led started with homework.</h2>
+              </div>
+            </div>
+            <div className="founder-story">
+              <p>
+                For 18 years, I&apos;ve done the same thing before every big campaign: <b>study what is already working</b>.
+              </p>
+              <p>
+                At Atlas Copco, I marketed four industrial brands across the Middle East and helped influence more than $12M in revenue. Before that, I ran channel
+                marketing for a global cybersecurity brand across 400+ partners in India, and led digital teams at agencies.
+              </p>
+              <p>
+                Different markets, different budgets, same pattern. The brands that grew fastest didn&apos;t start from a blank page. They took apart the best players in
+                their market, understood <i>why</i> their marketing worked, and then built something better of their own.
+              </p>
+              <p>
+                That homework usually takes weeks. I built Marketing Scholars so you can do it in a minute: study your competitor like a scholar, then build
+                yours.
+              </p>
+            </div>
+            <div className="founder-sign">
+              <span className="sig">Renuka R. Rane</span>
+              <span className="muted">Founder, Marketing Scholars · Global Channel &amp; Partner Marketing Leader · IIM Bangalore</span>
+              <a href="https://linkedin.com/in/ranerenuka" target="_blank" rel="noreferrer" data-track="cta:founder_linkedin">
+                Connect on LinkedIn →
+              </a>
+            </div>
+          </div>
+        </section>
+
         <section className="offer">
           <h2 className="reveal">Want the plan, not just the teardown?</h2>
           <p className="lead reveal">
@@ -261,7 +298,7 @@ export default async function Home() {
 
       <footer className="foot">
         <span>
-          © {new Date().getFullYear()} MarketMirror · Made in India · Public pages only. We never state traffic or ad spend as numbers because they cannot be seen from
+          © {new Date().getFullYear()} Marketing Scholars · Founded by Renuka R. Rane · Made in India · Public pages only. We never state traffic or ad spend as numbers because they cannot be seen from
           outside.
         </span>
       </footer>

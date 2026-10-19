@@ -1,4 +1,4 @@
-# MarketMirror: landing page A/B tests and Product Hunt launch kit
+# Marketing Scholars: landing page A/B tests and Product Hunt launch kit
 
 ## 1. What's live on the landing page
 
@@ -27,13 +27,12 @@ All motion turns off for visitors who set "reduce motion".
 
 ## 2. The A/B tests
 
-Three independent 50/50 experiments run at the same time (a factorial design). Every visitor is in all three, so each test gets 100% of traffic.
+Two independent 50/50 experiments run at the same time (a factorial design). Every visitor is in both, so each test gets 100% of traffic. The design test is **closed**: the light **Editorial** design was chosen and is now everyone's default. You can still preview the old dark design with `?design=a`.
 
 | Experiment | Arm A | Arm B | What we learn |
 |---|---|---|---|
-| `pos` positioning | **Spy**: "See exactly how your competitor gets customers. In 60 seconds." | **Plan**: "Get a marketing plan built on what already works for your competitor. Not guesses." | Do people want intel or an outcome? |
-| `hook` opener | **Pain/story**: "For founders tired of guessing… Your competitor didn't get lucky. They run a playbook…" | **Curiosity/mechanism**: "Every website leaks its marketing… The pixels it fires, the pages it builds…" | Which opener pulls people into the form? |
-| `design` | **Aurora**: dark, glassy, animated light | **Editorial**: warm paper, bold serif, hard-edged cards | Does premium-tech or bold-editorial convert better? |
+| `pos` positioning | **Reverse + build**: "Reverse-engineer your competitors' marketing strategies. Then build yours." | **Strategy → plan**: "Your competitor's marketing strategy, reverse-engineered. Your plan, built from it." | Which framing of the same promise pulls harder? |
+| `hook` opener | **Founder authority**: "18 years of brand building, in one tool… Every brand transformation starts the same way: studying what already works." | **Curiosity**: "Every website leaks its marketing… The pixels it fires, the pages it builds…" | Does founder credibility or curiosity get more people into the form? |
 
 **How assignment works:**
 - `src/middleware.ts` gives each visitor a random variant on their first visit. It's stored in the `mm_ab` cookie for 90 days, so they always see the same page.
@@ -67,14 +66,14 @@ Every event carries `exp_pos`, `exp_hook`, `exp_design` and `variant`:
    - `POSTHOG_HOST` = `https://us.i.posthog.com`, or `https://eu.i.posthog.com` if you chose the EU cloud
 4. Redeploy.
 5. In PostHog, create **Insights → Funnel**: `lp_view` → `report_started` → `report_completed`.
-6. Set **Breakdown** to `exp_pos`. Duplicate the funnel for `exp_hook` and `exp_design`.
+6. Set **Breakdown** to `exp_pos`. Duplicate the funnel for `exp_hook`.
 
 ### How to call a winner
 - **Primary metric:** `report_completed / lp_view`, which is visitors who got a teardown. Once email is on, that's also your lead capture.
 - **Secondary metrics:**
   - `cta_click / lp_view` (intent)
   - `upgrade_click` and `payment_success` (revenue)
-- **Sample size:** at a 10% baseline, detecting a 2-point absolute lift (10% → 12%) needs about **3,800 visitors per arm** at 95% confidence and 80% power. Because the tests are factorial, that's about 7,600 total visitors for all three tests. A Product Hunt launch day can deliver that.
+- **Sample size:** at a 10% baseline, detecting a 2-point absolute lift (10% → 12%) needs about **3,800 visitors per arm** at 95% confidence and 80% power. Because the tests are factorial, that's about 7,600 total visitors for both tests. A Product Hunt launch day can deliver that.
 - **Read only once each arm has its full sample.** Don't stop early because one arm "looks" ahead after 200 visits.
 - **Ship winners one at a time.** Hard-code the winner in `src/lib/experiments.ts` (for example, always return `pos: "b"`), then start the next test in its place. Good next tests:
   - CTA wording
@@ -108,23 +107,23 @@ The sources are mostly third-party guides and recaps, not Product Hunt itself, s
 **One decision to make first.** Product Hunt's audience is global, but payment is UPI-only (India). For launch week, set `PRO_FREE_BETA=true` so the full plan is free for everyone. The site then shows a true "Launch week: the full plan is free" bar. That's honest scarcity, which recent winners used. It also collects global emails and gives a reason to comment. Switch payments on after launch week.
 
 ### Tagline options (60 characters or fewer)
-1. `See how any competitor gets customers, in 60 seconds` (52)
-2. `Reverse-engineer any competitor's marketing into a PDF` (54)
-3. `Turn your competitor's playbook into your marketing plan` (56)
+1. `Reverse-engineer competitors' marketing, then build yours` (59)
+2. `Your competitor's marketing strategy, reverse-engineered` (56)
+3. `Study what works for competitors, build your strategy` (53)
 
 Pick the one matching the winning `pos` arm, if you have data by then.
 
 ### Description (260 characters or fewer)
-> Paste a competitor's URL. MarketMirror reads their public site (ad pixels, SEO pages, pricing, funnel) and hands you their marketing playbook as a free PDF. Add your brand and get a 90-day plan built on what already works for them.
+> Paste a competitor's URL. Marketing Scholars reverse-engineers their marketing strategy from their public site (ad pixels, SEO pages, pricing, funnel) into a free PDF. Add your brand and build your own 90-day plan from what already works for them.
 
 ### Maker first comment (post within 2 minutes)
-> Hey Product Hunt 👋
+> Hey Product Hunt 👋 I'm Renuka.
 >
-> I kept watching smaller founders burn months guessing at marketing while a competitor two tabs away had already figured it out. Their ads, their SEO pages, their funnel: it's all public. Nobody has time to piece it together.
+> For 18 years I've done the same homework before every big campaign: study what's already working. At Atlas Copco I marketed four industrial brands across the Middle East, and before that I ran channel marketing across 400+ partners in India. The brands that grew fastest never started from a blank page. They took apart the best players in their market, understood *why* their marketing worked, then built something better.
 >
-> So we built MarketMirror. Paste any competitor's URL and in under a minute you get their playbook as a PDF: which ad and email tools they run, how many SEO pages they've built (and the template behind them), their entry offer and pricing model, and the blind spots you can own.
+> That homework takes weeks. Marketing Scholars does it in a minute.
 >
-> Add your own brand and it writes your plan: positioning, a 30/60/90 with stop rules, a 12-week content calendar, SEO keywords, ad angles and a welcome email sequence.
+> Paste any competitor's URL and get their strategy as a PDF: which ad and email tools they run, how many SEO pages they've built (and the template behind them), their entry offer and pricing model, and the blind spots you can own. Add your own brand and it builds yours: positioning, a 30/60/90 plan with stop rules, a 12-week content calendar, SEO keywords, ad angles and a welcome email sequence.
 >
 > Two promises: we only read public pages, and the report teaches the *mechanism*, never to copy anyone's words or design.
 >

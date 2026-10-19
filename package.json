@@ -2,7 +2,7 @@
   "name": "reverse-engineering-marketing",
   "version": "0.1.0",
   "private": true,
-  "description": "MarketMirror: paste a competitor URL, get their reverse-engineered marketing plan as a PDF.",
+  "description": "Marketing Scholars: paste a competitor URL, get their reverse-engineered marketing plan as a PDF.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

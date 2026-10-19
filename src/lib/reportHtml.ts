@@ -171,7 +171,7 @@ export function reportHtml(r: Report, appUrl: string): string {
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)} - MarketMirror ${r.plan ? "full report" : "teardown"}</title>
+<title>${esc(title)} - Marketing Scholars ${r.plan ? "full report" : "teardown"}</title>
 <style>
   :root { --ink:#14161f; --muted:#5b6070; --line:#e3e5eb; --brand:#4f46e5; --soft:#eef0ff; --ok:#0f766e; --bad:#b91c1c; }
   * { box-sizing: border-box; }
@@ -211,7 +211,7 @@ export function reportHtml(r: Report, appUrl: string): string {
   }
 </style></head>
 <body>
-<div class="bar"><span><b>MarketMirror</b> <small>${esc(title)}</small></span><span><small>Choose "Save as PDF" as the printer</small> <button onclick="window.print()">Save as PDF</button></span></div>
+<div class="bar"><span><b>Marketing Scholars</b> <small>${esc(title)}</small></span><span><small>Choose "Save as PDF" as the printer</small> <button onclick="window.print()">Save as PDF</button></span></div>
 <main>
   <div class="cover">
     <p class="kicker">${r.plan ? "FULL REPORT" : "FREE TEARDOWN"}</p>
@@ -226,7 +226,7 @@ export function reportHtml(r: Report, appUrl: string): string {
   </div>
   ${teardownHtml(d)}
   ${r.plan ? planHtml(r.plan, d.competitor) : upsell}
-  <footer>Method: public pages only (homepage, pricing, blog, robots.txt, sitemap, llms.txt). Observations are labelled; inferences are marked as such. Traffic and spend are never stated as numbers. Copy the mechanism, never the material. MarketMirror, ${esc(date)}.</footer>
+  <footer>Method: public pages only (homepage, pricing, blog, robots.txt, sitemap, llms.txt). Observations are labelled; inferences are marked as such. Traffic and spend are never stated as numbers. Copy the mechanism, never the material. Marketing Scholars, ${esc(date)}.</footer>
 </main>
 </body></html>`;
 }

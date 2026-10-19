@@ -1,4 +1,4 @@
-# MarketMirror
+# Marketing Scholars
 
 Paste a competitor's URL and get their reverse-engineered marketing as a PDF.
 Add your brand and domain and get a full end-to-end marketing plan built from it.
@@ -57,7 +57,7 @@ npm run build                # production build
 
 ## Deploy (free)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing&project-name=marketmirror&env=GROQ_API_KEY&envDescription=Free%20Groq%20key%20for%20AI%20analysis%20(console.groq.com%2Fkeys).%20Add%20Razorpay%20and%20Resend%20keys%20later.&envLink=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing%2Fblob%2Fmain%2F.env.example)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing&project-name=marketing-scholars&env=GROQ_API_KEY&envDescription=Free%20Groq%20key%20for%20AI%20analysis%20(console.groq.com%2Fkeys).%20Add%20Razorpay%20and%20Resend%20keys%20later.&envLink=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing%2Fblob%2Fmain%2F.env.example)
 
 Or import the existing repo, so Vercel deploys on every push to `main`:
 1. At https://vercel.com/new, choose **Import Git Repository** and pick `renukarane/reverse-engineering-marketing`. Vercel detects Next.js; keep the defaults.
@@ -134,7 +134,7 @@ Each email address gets at most 3 free reports an hour.
 **Setup:**
 1. Create a Resend account.
 2. Verify your sending domain by adding the DNS records Resend gives you.
-3. Set `RESEND_API_KEY` and `EMAIL_FROM`, for example `MarketMirror <reports@yourdomain.com>`.
+3. Set `RESEND_API_KEY` and `EMAIL_FROM`, for example `Marketing Scholars <reports@yourdomain.com>`.
 
 Until your domain is verified, Resend only delivers to your own account address.
 
