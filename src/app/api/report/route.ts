@@ -35,7 +35,8 @@ export async function POST(req: Request) {
   } catch (e) {
     // Shows up in Vercel > Deployments > Logs.
     console.error("[report] PDF render failed:", e);
-    return new Response("We could not build the PDF for this report. Please try again, or check your email for a copy.", { status: 500 });
+    const detail = e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 300) : String(e).slice(0, 300);
+    return new Response(`We could not build the PDF (${detail}). Please send this message to support.`, { status: 500 });
   }
   const slug = teardown.competitor.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "competitor";
   return new Response(new Uint8Array(pdf), {

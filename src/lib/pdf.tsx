@@ -1,4 +1,4 @@
-import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Font, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import type { ReactNode } from "react";
 import type { CompetitorTeardown, ProPlan, Report } from "./types";
 
@@ -11,8 +11,12 @@ function t(s: string | number | undefined | null): string {
     .replace(/[“”]/g, '"')
     .replace(/…/g, "...")
     .replace(/₹/g, "INR ")
+    .replace(/\xAD/g, "") // soft hyphens from web copy confuse line breaking
     .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF€]/g, "");
 }
+
+// No dictionary hyphenation; long unbroken tokens (URLs, slugs) may break every 20 chars.
+Font.registerHyphenationCallback((word) => (word.length > 20 ? word.match(/.{1,20}/g) ?? [word] : [word]));
 
 const C = { ink: "#14161f", muted: "#5b6070", line: "#e3e5eb", brand: "#4f46e5", soft: "#eef0ff", ok: "#0f766e", warn: "#b45309", bad: "#b91c1c" };
 
@@ -344,7 +348,7 @@ function UpgradePage({ footer, url }: { footer: string; url: string }) {
   );
 }
 
-export async function renderReportPdf(r: Report, appUrl: string): Promise<Buffer> {
+async function renderDesignedPdf(r: Report, appUrl: string): Promise<Buffer> {
   const d = r.teardown;
   const date = d.generatedAt.slice(0, 10);
   const footer = `MarketMirror · ${d.competitor} · ${date}`;
@@ -375,4 +379,81 @@ export async function renderReportPdf(r: Report, appUrl: string): Promise<Buffer
     </Document>
   );
   return renderToBuffer(doc);
+}
+
+/** Every section as a plain heading plus lines, for the fallback layout. */
+function plainSections(r: Report, appUrl: string): { h: string; lines: string[] }[] {
+  const d = r.teardown;
+  const p = r.plan;
+  const list = (xs: string[]) => xs.map((x) => `- ${x}`);
+  const kv = (o: Record<string, string>) => Object.entries(o).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+  const out: { h: string; lines: string[] }[] = [
+    { h: "Summary", lines: [d.summary] },
+    { h: "Positioning", lines: kv(d.positioning) },
+    { h: "Audience", lines: [...list(d.audience.segments), ...list(d.audience.painsAddressed), ...list(d.audience.objectionsHandled)] },
+    { h: "Channels", lines: d.channels.map((c) => `- ${c.channel} [${c.status}]: ${c.evidence} ${c.role}`) },
+    { h: "Content", lines: [...kv({ cadence: d.content.cadence, ctaPattern: d.content.ctaPattern, hookStyle: d.content.hookStyle }), ...list(d.content.pillars), ...list(d.content.formats)] },
+    { h: "SEO", lines: [...list(d.seo.pageTypes), ...list(d.seo.programmatic), ...list(d.seo.keywordThemes), ...list(d.seo.observations)] },
+    { h: "Funnel and offer", lines: [...kv({ entryOffer: d.funnel.entryOffer, coreOffer: d.funnel.coreOffer, pricingModel: d.funnel.pricingModel, upgradeGate: d.funnel.upgradeGate }), ...list(d.funnel.steps)] },
+    { h: "Tech stack", lines: [d.techStack.join(", ")] },
+    { h: "What works for them", lines: d.whatWorks.map((w) => `- ${w.tactic} (${w.transferable}, ${w.costToCopy}): ${w.whyItWorks} Evidence: ${w.evidence}`) },
+    { h: "Their blind spots", lines: list(d.gaps) },
+    { h: "Quick wins", lines: list(d.quickWins) },
+  ];
+  if (p) {
+    out.push(
+      { h: `Your plan: ${p.brandName}`, lines: [p.executiveSummary] },
+      { h: "Positioning", lines: [p.positioning.statement, ...list(p.positioning.differentiators), ...list(p.positioning.taglines)] },
+      { h: "Ideal customer", lines: [p.icp.primary, p.icp.secondary, ...list(p.icp.pains), ...list(p.icp.triggers), ...list(p.icp.whereTheyGather)] },
+      { h: "Strategies", lines: p.strategies.map((x) => `- ${x.name}: ${x.objective}. Borrowed: ${x.borrowedMechanism}. Our twist: ${x.ourTwist}`) },
+      { h: "Channel plan", lines: p.channelPlan.map((c) => `- ${c.channel} (${c.priority}): ${c.goal}. ${c.tactics.join("; ")}. KPI: ${c.kpi}`) },
+      { h: "30/60/90 plan", lines: p.executionPlan.flatMap((ph) => [`${ph.phase}: ${ph.focus}`, ...ph.tasks.map((x) => `- ${x.task} (${x.hours}h). Metric: ${x.metric}. Kill rule: ${x.killRule}`)]) },
+      { h: "Content plan", lines: [...p.contentPlan.pillars.flatMap((pl) => [`${pl.name}: ${pl.purpose}`, ...list(pl.topics)]), ...p.contentPlan.calendar.map((c) => `Week ${c.week}: ${c.title} (${c.format}, ${c.channel}, ${c.funnelStage})`)] },
+      { h: "SEO plan", lines: [...p.seoPlan.keywords.map((k) => `- ${k.keyword} (${k.intent}, ${k.pageType})`), p.seoPlan.programmaticIdea] },
+      { h: "Ads plan", lines: [...p.adsPlan.angles.map((a) => `- ${a.angle}: ${a.hook} Offer: ${a.offer}`), p.adsPlan.budgetGuidance] },
+      { h: "Email plan", lines: [p.emailPlan.leadMagnet, ...p.emailPlan.sequence.map((e) => `- Day ${e.day}: ${e.subject} (${e.goal})`)] },
+      { h: "Swipe file", lines: p.swipeFile.map((w) => `- ${w.mechanism}. Blank: ${w.blankVersion}. Yours: ${w.yourVersion}`) },
+      { h: "KPIs", lines: p.kpis.map((k) => `- ${k.metric}: day 30 ${k.target30}, day 90 ${k.target90}`) },
+      { h: "Risks", lines: list(p.risks) },
+    );
+  } else {
+    out.push({ h: "Get your full marketing plan", lines: [appUrl] });
+  }
+  return out.map((x) => ({ h: x.h, lines: x.lines.filter(Boolean) })).filter((x) => x.lines.length);
+}
+
+// ASCII only, for the fallback layout.
+const ascii = (s: string) => t(s).normalize("NFKD").replace(/[^\x0A\x20-\x7E]/g, "");
+
+/** Fallback layout: plain text only, no tables, cards or fixed footers. */
+function renderPlainPdf(r: Report, appUrl: string): Promise<Buffer> {
+  const d = r.teardown;
+  return renderToBuffer(
+    <Document title={ascii(`${d.competitor} marketing teardown`)} author="MarketMirror">
+      <Page size="A4" style={{ padding: 40, fontFamily: "Helvetica", fontSize: 10, lineHeight: 1.4 }}>
+        <Text style={{ fontSize: 20, fontFamily: "Helvetica-Bold", lineHeight: 1.2, marginBottom: 6 }}>{ascii(r.plan ? `${r.plan.brandName} vs ${d.competitor}` : d.competitor)}</Text>
+        <Text style={{ color: "#5b6070", marginBottom: 14 }}>{ascii(`${d.url} | ${d.generatedAt.slice(0, 10)} | ${d.engine}`)}</Text>
+        {plainSections(r, appUrl).map((sec, i) => (
+          <View key={i} style={{ marginBottom: 10 }}>
+            <Text style={{ fontSize: 13, fontFamily: "Helvetica-Bold", color: "#4f46e5", marginBottom: 4 }}>{ascii(sec.h)}</Text>
+            {sec.lines.map((l, j) => (
+              <Text key={j} style={{ marginBottom: 3 }}>{ascii(l)}</Text>
+            ))}
+          </View>
+        ))}
+      </Page>
+    </Document>,
+  );
+}
+
+/** Designed PDF, falling back to the plain layout if the designed one fails to render. */
+export async function renderReportPdf(r: Report, appUrl: string): Promise<Buffer> {
+  try {
+    // PDF_FORCE_PLAIN exercises the fallback in local tests; ignored in production.
+    if (process.env.PDF_FORCE_PLAIN === "true" && process.env.NODE_ENV !== "production") throw new Error("PDF_FORCE_PLAIN");
+    return await renderDesignedPdf(r, appUrl);
+  } catch (e) {
+    console.error("[pdf] designed layout failed, using plain layout:", e);
+    return renderPlainPdf(r, appUrl);
+  }
 }
