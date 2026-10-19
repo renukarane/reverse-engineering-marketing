@@ -1,389 +1,270 @@
-"use client";
+import { cookies, headers } from "next/headers";
+import Generator from "@/components/Generator";
+import LandingEffects from "@/components/LandingEffects";
+import ScannerVisual from "@/components/ScannerVisual";
+import { priceLabel, proGate } from "@/lib/billing";
+import { AB_COOKIE, copyFor, parseVariant, randomVariant } from "@/lib/experiments";
+import "./landing.css";
 
-import { useEffect, useRef, useState } from "react";
-import { reportHtml } from "@/lib/reportHtml";
-import type { Report, Tier } from "@/lib/types";
+export const dynamic = "force-dynamic";
 
-const STEPS = [
-  "Reading the homepage",
-  "Mapping sitemap, robots.txt and llms.txt",
-  "Reading pricing and blog pages",
-  "Detecting tech stack, pixels and email tools",
-  "Reverse engineering positioning and funnel",
-  "Scoring what transfers and finding gaps",
+const CATEGORIES = ["D2C brands", "SaaS", "Edtech", "Fintech", "Agencies", "Coaches", "Creators", "Local services", "Marketplaces", "Health & wellness", "Travel", "B2B services"];
+
+const BULLETS = [
+  "Which ad pixels they fire, so you know exactly where they retarget your visitors",
+  "How many SEO pages they have built, and the template behind hundreds of them",
+  "How often they really publish, counted from their sitemap, not guessed",
+  "Their entry offer, pricing model and the one feature they lock behind the paywall",
+  "The email and CRM tools they use to turn visitors into buyers",
+  "Their blind spots: channels and audiences they ignore that you can own",
+  "What will work for you, and what only works because of their budget",
+  "Quick wins a small team can ship this month",
 ];
-const PRO_STEPS = [...STEPS, "Reading your site", "Building strategies and channel plan", "Writing 30/60/90 plan and content calendar", "Writing SEO, ads, email and swipe file"];
 
-type Proof = { orderId: string; paymentId: string; signature: string };
-type RazorpayCtor = new (opts: Record<string, unknown>) => { open: () => void; on: (e: string, f: (r: unknown) => void) => void };
+const PLAN = [
+  ["Positioning", "A sharper one-line position, differentiators and 3 tagline options"],
+  ["Ideal customer", "Pains, buying triggers and the exact places they gather online"],
+  ["Strategies", "4 to 6 plays built on what already works for your competitor, with your twist"],
+  ["Channel plan", "Which channels first, the tactics, the KPI and the hours each needs"],
+  ["30 / 60 / 90 days", "Tasks with hours, a metric and a stop rule, so you never waste a month"],
+  ["12-week content calendar", "Titles, formats, channels and keywords, week by week"],
+  ["SEO, ads and email", "15 keywords, 5 ad angles and a 6-email welcome sequence"],
+  ["Swipe file", "Their best mechanisms, rewritten for your brand"],
+];
 
-// Razorpay Checkout runs as a modal from their script; loaded only when someone pays.
-function loadRazorpay(): Promise<RazorpayCtor> {
-  const w = window as unknown as { Razorpay?: RazorpayCtor };
-  if (w.Razorpay) return Promise.resolve(w.Razorpay);
-  return new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => (w.Razorpay ? resolve(w.Razorpay) : reject(new Error("Payment window failed to load.")));
-    s.onerror = () => reject(new Error("Could not load the payment window. Check your connection and try again."));
-    document.body.appendChild(s);
-  });
-}
+const FAQ = [
+  ["Is this legal and ethical?", "Yes. We only read public pages any visitor can see, like the homepage, pricing page, blog and sitemap. The report teaches you their strategy (the mechanism), never to copy their words, images or brand."],
+  ["Do I need to sign up?", "No account and no card. Paste a URL, add your email, and the free PDF is yours."],
+  ["How long does it take?", "Usually under a minute. The full plan takes a little longer because it writes a 30/60/90 plan and a 12-week calendar for you."],
+  ["Will my competitor know?", "No. We read their public pages the way any visitor would. Nothing is sent to them."],
+  ["Which websites work?", "Most public business websites: D2C, SaaS, edtech, fintech, agencies, services. Some sites block automated readers, so run the free teardown first: if it works, the full plan will too."],
+  ["How do I pay for the full plan?", "One-time payment by UPI: Google Pay, PhonePe, Paytm, BHIM or any UPI app. No subscription."],
+];
 
-export default function Home() {
-  const [tier, setTier] = useState<Tier>("free");
-  const [form, setForm] = useState({ competitorUrl: "", brandName: "", domain: "", niche: "", audience: "", goal: "", accessCode: "", email: "" });
-  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "razorpay" | "code"; price: string; aiEnabled: boolean; emailEnabled: boolean } | null>(null);
-  const [showCode, setShowCode] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [paidProof, setPaidProof] = useState<Proof | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const [step, setStep] = useState(0);
-  const [error, setError] = useState("");
-  const [report, setReport] = useState<(Report & { delivery?: { status: string; to?: string } }) | null>(null);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const resultRef = useRef<HTMLDivElement>(null);
+export default async function Home() {
+  const jar = await cookies();
+  const variant = parseVariant(jar.get(AB_COOKIE)?.value) ?? randomVariant();
+  const c = copyFor(variant);
+  const gate = proGate();
+  const price = priceLabel();
+  const referrer = (await headers()).get("referer") ?? "";
+  const design = variant.design === "a" ? "aurora" : "editorial";
 
-  useEffect(() => {
-    fetch("/api/config").then((r) => r.json()).then(setCfg).catch(() => setCfg({ proFreeBeta: true, proGate: "free", price: "", aiEnabled: false, emailEnabled: false }));
-    // A payment from the last few days lets the buyer rebuild their report.
-    try {
-      const saved = localStorage.getItem("mm_paid_order");
-      if (saved) setPaidProof(JSON.parse(saved));
-    } catch {
-      /* storage blocked or corrupt */
-    }
-  }, []);
-
-  const steps = tier === "pro" ? PRO_STEPS : STEPS;
-  useEffect(() => {
-    if (!loading) return;
-    setStep(0);
-    const id = setInterval(() => setStep((s) => Math.min(s + 1, steps.length - 1)), tier === "pro" ? 6000 : 3500);
-    return () => clearInterval(id);
-  }, [loading, steps.length, tier]);
-
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
-
-  const needsCheckout = tier === "pro" && cfg?.proGate === "razorpay" && !(showCode && form.accessCode);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (needsCheckout) return checkout();
-    return run({ ...form, tier });
-  }
-
-  async function checkout() {
-    setError("");
-    setNotice("");
-    setPaying(true);
-    try {
-      const [Razorpay, res] = await Promise.all([
-        loadRazorpay(),
-        fetch("/api/checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) }),
-      ]);
-      const order = await res.json();
-      if (!res.ok || !order.orderId) throw new Error(order.error || "Could not start payment.");
-      const rzp = new Razorpay({
-        key: order.keyId,
-        order_id: order.orderId,
-        amount: order.amount,
-        currency: order.currency,
-        name: order.name,
-        description: order.description,
-        prefill: { email: order.email || undefined },
-        theme: { color: "#4f46e5" },
-        // UPI only: hide cards, netbanking and wallets.
-        config: {
-          display: {
-            blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi" }] } },
-            sequence: ["block.upi"],
-            preferences: { show_default_blocks: false },
-          },
-        },
-        handler: (r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
-          const proof = { orderId: r.razorpay_order_id, paymentId: r.razorpay_payment_id, signature: r.razorpay_signature };
-          try {
-            localStorage.setItem("mm_paid_order", JSON.stringify(proof));
-          } catch {
-            /* storage blocked */
-          }
-          setPaying(false);
-          run({ payment: proof, tier: "pro" });
-        },
-        modal: {
-          ondismiss: () => {
-            setPaying(false);
-            setNotice("Payment cancelled. You were not charged.");
-          },
-        },
-      });
-      rzp.on("payment.failed", () => setNotice("That UPI payment did not go through. You can try again."));
-      rzp.open();
-    } catch (err) {
-      setError((err as Error).message);
-      setPaying(false);
-    }
-  }
-
-  async function run(payload: Record<string, unknown>) {
-    setError("");
-    setNotice("");
-    setReport(null);
-    setLoading(true);
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Something went wrong.");
-      if (payload.payment) setPaidProof(null);
-      setReport(data);
-      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function downloadPdf() {
-    if (!report) return;
-    setError("");
-    setPdfBusy(true);
-    // iPhone/iPad Safari ignores programmatic downloads and blocks pop-ups opened
-    // after an await, so open the tab now, inside the click, and fill it in later.
-    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    const tab = ios ? window.open("", "_blank") : null;
-    try {
-      const res = await fetch("/api/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(report) });
-      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Could not build the PDF (error ${res.status}).`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "marketing-report.pdf";
-      if (tab) {
-        tab.location.href = url;
-      } else {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        a.rel = "noopener";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      // Revoking straight away cancels the download in Safari and Firefox.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      tab?.close();
-      setError(`PDF download failed: ${(err as Error).message} Use "View report (save as PDF)" instead.`);
-    } finally {
-      setPdfBusy(false);
-    }
-  }
-
-  // Opens the printable HTML report in a new tab. Built synchronously in the
-  // click, so pop-up blockers allow it, and it needs no server.
-  function viewReport() {
-    if (!report) return;
-    const url = URL.createObjectURL(new Blob([reportHtml(report, window.location.origin)], { type: "text/html" }));
-    const w = window.open(url, "_blank");
-    if (!w) window.location.href = url;
-    setTimeout(() => URL.revokeObjectURL(url), 120_000);
-  }
-
-  function upgrade() {
-    setTier("pro");
-    setReport(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  const t = report?.teardown;
   return (
-    <main className="wrap">
-      <header className="top">
-        <div className="logo">Market<span>Mirror</span></div>
-        <span className="badge">{cfg?.proFreeBeta ? "Beta: full report free" : "Beta"}</span>
-      </header>
-
-      <section className="hero">
-        <h1>See exactly how your competitor markets. Then beat it.</h1>
-        <p>Paste a competitor URL. We reverse engineer their positioning, channels, SEO, funnel and offer into a PDF teardown. Add your brand and get a full marketing plan built from it.</p>
-      </section>
-
-      <form className="card" onSubmit={submit}>
-        <div className="tabs" role="tablist">
-          <button type="button" role="tab" className="tab" aria-selected={tier === "free"} onClick={() => setTier("free")}>
-            <b>Free teardown</b>
-            <small>Competitor's reverse-engineered marketing, PDF</small>
-          </button>
-          <button type="button" role="tab" className="tab" aria-selected={tier === "pro"} onClick={() => setTier("pro")}>
-            <b>Full plan {cfg?.proFreeBeta ? "(free in beta)" : cfg?.price ? `(${cfg.price})` : "(Pro)"}</b>
-            <small>Teardown plus your end-to-end marketing plan</small>
-          </button>
-        </div>
-
-        <label htmlFor="competitorUrl">Competitor website</label>
-        <input id="competitorUrl" required placeholder="competitor.com" value={form.competitorUrl} onChange={set("competitorUrl")} inputMode="url" autoComplete="off" />
-
-        {tier === "free" && cfg?.emailEnabled && (
-          <>
-            <label htmlFor="email">Your email <span className="opt">(we send the PDF here)</span></label>
-            <input id="email" type="email" required placeholder="you@company.com" value={form.email} onChange={set("email")} autoComplete="email" />
-          </>
-        )}
-
-        {tier === "pro" && (
-          <>
-            <div className="grid2">
-              <div>
-                <label htmlFor="brandName">Your brand name</label>
-                <input id="brandName" required placeholder="Acme" value={form.brandName} onChange={set("brandName")} />
-              </div>
-              <div>
-                <label htmlFor="domain">Your domain</label>
-                <input id="domain" required placeholder="acme.com" value={form.domain} onChange={set("domain")} inputMode="url" />
-              </div>
-              <div>
-                <label htmlFor="niche">What you sell <span className="opt">(optional)</span></label>
-                <input id="niche" placeholder="Email marketing software for creators" value={form.niche} onChange={set("niche")} />
-              </div>
-              <div>
-                <label htmlFor="audience">Who you sell to <span className="opt">(optional)</span></label>
-                <input id="audience" placeholder="D2C founders in India" value={form.audience} onChange={set("audience")} />
-              </div>
-            </div>
-            <label htmlFor="goal">Main goal for the next 90 days <span className="opt">(optional)</span></label>
-            <input id="goal" placeholder="Get 200 paying customers a month" value={form.goal} onChange={set("goal")} />
-            {(cfg?.emailEnabled || cfg?.proGate === "razorpay") && (
-              <>
-                <label htmlFor="email">
-                  Your email <span className="opt">({cfg?.emailEnabled ? "we send the PDF here" : "for your receipt"})</span>
-                </label>
-                <input id="email" type="email" required={!!cfg?.emailEnabled} placeholder="you@company.com" value={form.email} onChange={set("email")} autoComplete="email" />
-              </>
-            )}
-            {cfg?.proGate === "code" || showCode ? (
-              <>
-                <label htmlFor="accessCode">Access code</label>
-                <input id="accessCode" required value={form.accessCode} onChange={set("accessCode")} />
-              </>
-            ) : cfg?.proGate === "razorpay" ? (
-              <p className="note">
-                <button type="button" className="linkish" onClick={() => setShowCode(true)}>Have an access code?</button>
-              </p>
-            ) : null}
-          </>
-        )}
-
-        <button className="btn full" disabled={loading || paying}>
-          {paying
-            ? "Opening UPI payment…"
-            : loading
-              ? "Analysing…"
-              : needsCheckout ? `Pay ${cfg?.price} with UPI` : tier === "pro" ? "Build my marketing plan" : "Reverse engineer their marketing"}
-        </button>
-        {needsCheckout && (
-          <p className="note">
-            One-time payment via UPI (Google Pay, PhonePe, Paytm, BHIM or any UPI app), secured by Razorpay.
-            {cfg?.emailEnabled ? " Your PDF is also emailed to you the moment payment completes." : " Your report starts building right after payment."}
-          </p>
-        )}
-        {notice && <p className="note" role="status">{notice}</p>}
-        {paidProof && !loading && !report && (
-          <p className="note">
-            You have a paid report from the last 7 days.{" "}
-            <button type="button" className="linkish" onClick={() => run({ payment: paidProof, tier: "pro" })}>Rebuild it</button>
-          </p>
-        )}
-        {error && <p className="error" role="alert">{error}</p>}
-        {loading && (
-          <ul className="steps" aria-live="polite">
-            {steps.map((s, i) => (
-              <li key={s} className={i < step ? "done" : i === step ? "now" : ""}>{s}</li>
-            ))}
-          </ul>
-        )}
-        {cfg && !cfg.aiEnabled && <p className="note">AI is not configured on this server, so reports use the rule-based engine (observations only).</p>}
-      </form>
-
-      {t && report && (
-        <div className="result card" ref={resultRef}>
-          <h2>{report.plan ? `${report.plan.brandName} vs ${t.competitor}` : t.competitor}</h2>
-          <p className="note" style={{ marginTop: 0 }}>{t.url} · {t.generatedAt.slice(0, 10)} · {t.engine}</p>
-          {report.delivery?.to && report.delivery.status !== "none" && (
-            <p className={report.delivery.status === "failed" ? "error" : "sent"} role="status">
-              {report.delivery.status === "sent" && `📩 We emailed the PDF to ${report.delivery.to}.`}
-              {report.delivery.status === "already" && `📩 We already emailed this PDF to ${report.delivery.to}.`}
-              {report.delivery.status === "pending" && `📩 Your PDF is on its way to ${report.delivery.to}. It usually arrives within a minute or two.`}
-              {report.delivery.status === "failed" && `We could not email ${report.delivery.to}. Use the download button below.`}
-            </p>
-          )}
-          <div className="summary">{t.summary}</div>
-
-          <h3>Channel map</h3>
-          <div className="chips">
-            {t.channels.map((c) => (
-              <span key={c.channel} className={`chip ${c.status}`} title={c.evidence}>{c.channel}</span>
-            ))}
-          </div>
-
-          <h3>Positioning</h3>
-          <p style={{ margin: 0 }}><b>{t.positioning.oneLiner}</b></p>
-          <p className="note">Primary CTA: {t.positioning.primaryCta || "n/a"} · Entry offer: {t.funnel.entryOffer || "n/a"}</p>
-
-          <h3>What works for them</h3>
-          <div className="scroll">
-            <table>
-              <thead><tr><th>Tactic</th><th>Transfers?</th></tr></thead>
-              <tbody>
-                {t.whatWorks.map((w) => (
-                  <tr key={w.tactic}><td>{w.tactic}<div className="note" style={{ marginTop: 2 }}>{w.whyItWorks}</div></td><td>{w.transferable}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <h3>Their blind spots</h3>
-          <ul>{t.gaps.slice(0, 6).map((g) => <li key={g}>{g}</li>)}</ul>
-
-          {report.plan && (
-            <>
-              <h3>Your positioning</h3>
-              <div className="summary">{report.plan.positioning.statement}</div>
-              <h3>First 30 days</h3>
-              <ul>{report.plan.executionPlan[0]?.tasks.map((x) => <li key={x.task}>{x.task} <span className="note">({x.hours}h)</span></li>)}</ul>
-              <p className="note">The PDF includes strategies, channel plan, full 30/60/90 plan, content pillars, a 12-week calendar, SEO keywords, ad angles, email sequence, swipe file and KPIs.</p>
-            </>
-          )}
-
-          <div className="actions">
-            <button className="btn" onClick={downloadPdf} disabled={pdfBusy}>{pdfBusy ? "Building PDF…" : "Download PDF report"}</button>
-            <button className="btn ghost" onClick={viewReport}>View report (save as PDF)</button>
-            {!report.plan && <button className="btn ghost" onClick={upgrade}>Get my full marketing plan</button>}
-          </div>
-
-          {!report.plan && (
-            <div className="upsell">
-              <b>Want the plan, not just the teardown?</b>
-              <p className="note">{cfg?.proGate === "razorpay" ? `One-time ${cfg.price} via UPI. ` : ""}Add your brand and domain. We will turn {t.competitor}&apos;s playbook into your positioning, strategies, 30/60/90 execution plan, content calendar, SEO keywords, ad angles and email sequence.</p>
-            </div>
-          )}
+    <div className={`lp ${design}`} data-variant={`${variant.pos}${variant.hook}${variant.design}`}>
+      <LandingEffects referrer={referrer} />
+      {design === "aurora" && (
+        <div className="aurora" aria-hidden="true">
+          <i />
+          <i />
+          <i />
         </div>
       )}
 
-      <section className="how">
-        <div><b>1. Footprint</b><p>We read their public homepage, pricing, blog, sitemap, robots.txt and llms.txt, and detect pixels, email and analytics tools.</p></div>
-        <div><b>2. Teardown</b><p>AI reverse engineers positioning, audience, channels, content, SEO, funnel and offer, and marks what transfers to you.</p></div>
-        <div><b>3. Your plan</b><p>Strategies, a 30/60/90 plan with kill rules, a 12-week content calendar, SEO, ads and email. Mechanisms, never their material.</p></div>
-      </section>
+      <header className="nav">
+        <div className="nav-in">
+          <a className="brand" href="#top">
+            <span className="mark" aria-hidden="true" /> Market<b>Mirror</b>
+          </a>
+          <a className="nav-cta" href="#start" data-track="cta:nav">
+            {c.cta}
+          </a>
+        </div>
+      </header>
 
-      <footer>
-        Public pages only. We never state traffic or ad spend as numbers because they cannot be observed from outside. Copy the mechanism, never the material.
+      {gate === "free" && (
+        <div className="launch-bar">
+          <span className="pulse" aria-hidden="true" /> Launch week: the full marketing plan is <b>free</b> while we are in beta.
+        </div>
+      )}
+
+      <main id="top">
+        <section className="hero">
+          <div className="hero-copy">
+            <p className="kicker reveal">{c.kicker}</p>
+            <h1 className="reveal">
+              {c.headline[0]} <span className="hl">{c.headline[1]}</span> <span className="accent">{c.accent}</span>
+            </h1>
+            <p className="sub reveal">{c.sub}</p>
+            <ul className="trust reveal">
+              <li>Free PDF</li>
+              <li>No signup</li>
+              <li>Public pages only</li>
+            </ul>
+            <div className="hero-form reveal">
+              <Generator copy={{ cta: c.cta, proLabel: c.proLabel }} />
+            </div>
+          </div>
+          <div className="hero-art reveal">
+            <ScannerVisual />
+          </div>
+        </section>
+
+        <div className="marquee" aria-label="Works for">
+          <div className="track">
+            {[...CATEGORIES, ...CATEGORIES].map((x, i) => (
+              <span key={i}>{x}</span>
+            ))}
+          </div>
+        </div>
+
+        <section className="stats">
+          <div className="stat reveal">
+            <b data-count="10">10</b>
+            <span>report sections</span>
+          </div>
+          <div className="stat reveal">
+            <b data-count="50" data-suffix="+">50+</b>
+            <span>ad, email and analytics tools detected</span>
+          </div>
+          <div className="stat reveal">
+            <b data-count="90" data-suffix="-day">90-day</b>
+            <span>action plan in the full report</span>
+          </div>
+          <div className="stat reveal">
+            <b>₹0</b>
+            <span>for the teardown. Really.</span>
+          </div>
+        </section>
+
+        <section className="pain">
+          <h2 className="reveal">You are paying to learn what your competitor already knows.</h2>
+          <div className="cards3">
+            <article className="card-p reveal">
+              <span className="emoji" aria-hidden="true">🔥</span>
+              <h3>Ads that burn money</h3>
+              <p>You test angles your competitor dropped months ago, because you cannot see their results.</p>
+            </article>
+            <article className="card-p reveal">
+              <span className="emoji" aria-hidden="true">📝</span>
+              <h3>Content nobody reads</h3>
+              <p>You post every week and hope. They run a template that ranks for hundreds of searches.</p>
+            </article>
+            <article className="card-p reveal">
+              <span className="emoji" aria-hidden="true">⏳</span>
+              <h3>Audits that take weeks</h3>
+              <p>An agency competitor audit costs weeks and real money, and still ends with a slide deck, not a plan.</p>
+            </article>
+          </div>
+          <p className="bridge reveal">
+            Here is the thing: <b>every website leaks its strategy.</b> You just need something that knows where to look.
+          </p>
+        </section>
+
+        <section className="how">
+          <h2 className="reveal">How it works</h2>
+          <ol className="steps3">
+            <li className="reveal">
+              <span className="n">1</span>
+              <h3>Paste their URL</h3>
+              <p>Any competitor, any industry. Add your email so we can send the PDF.</p>
+            </li>
+            <li className="reveal">
+              <span className="n">2</span>
+              <h3>We read the leaks</h3>
+              <p>Homepage, pricing, blog, sitemap, robots.txt and the tracking tools they run, then AI reverse-engineers the strategy.</p>
+            </li>
+            <li className="reveal">
+              <span className="n">3</span>
+              <h3>Get the playbook</h3>
+              <p>A clean PDF in your inbox and on screen: what works for them, what transfers to you, and where they are weak.</p>
+            </li>
+          </ol>
+        </section>
+
+        <section className="inside">
+          <div className="inside-copy">
+            <h2 className="reveal">Inside your free teardown</h2>
+            <ul className="bullets">
+              {BULLETS.map((b) => (
+                <li key={b} className="reveal">
+                  {b}
+                </li>
+              ))}
+            </ul>
+            <a className="btn-cta reveal" href="#start" data-track="cta:inside">
+              {c.cta} →
+            </a>
+          </div>
+          <div className="pages reveal" aria-hidden="true">
+            <div className="page p3" />
+            <div className="page p2" />
+            <div className="page p1">
+              <span className="pk">FREE TEARDOWN</span>
+              <span className="pt">competitor.com</span>
+              <span className="pl" />
+              <span className="pl s" />
+              <span className="ph">Channel map</span>
+              <span className="pills">
+                <i className="g" />
+                <i className="v" />
+                <i className="v" />
+                <i />
+              </span>
+              <span className="ph">Blind spots</span>
+              <span className="pl" />
+              <span className="pl s" />
+            </div>
+          </div>
+        </section>
+
+        <section className="offer">
+          <h2 className="reveal">Want the plan, not just the teardown?</h2>
+          <p className="lead reveal">
+            Add your brand and domain. We turn your competitor&apos;s playbook into <b>your</b> end-to-end marketing plan.
+          </p>
+          <div className="plan-grid">
+            {PLAN.map(([h, p]) => (
+              <div key={h} className="plan-item reveal">
+                <h3>{h}</h3>
+                <p>{p}</p>
+              </div>
+            ))}
+          </div>
+          <div className="price reveal">
+            <div>
+              <span className="price-tag">{gate === "free" ? "Free during launch" : price}</span>
+              <span className="price-note">{gate === "free" ? "Beta pricing ends after launch week" : "One-time. Pay by UPI. No subscription."}</span>
+            </div>
+            <a className="btn-cta" href="#start" data-track="cta:offer">
+              Get my full plan →
+            </a>
+          </div>
+          <p className="risk reveal">Start with the free teardown. Only pay if you want the full plan for your brand.</p>
+        </section>
+
+        <section className="ethic reveal">
+          <p>
+            <b>Copy the mechanism, never the material.</b> We show you how their marketing works so you can build your own version. We never copy text, images or
+            brands, and we only read public pages.
+          </p>
+        </section>
+
+        <section className="faq">
+          <h2 className="reveal">Questions</h2>
+          {FAQ.map(([q, a], i) => (
+            <details key={q} className="reveal">
+              <summary data-track={`faq:${i + 1}`}>{q}</summary>
+              <p>{a}</p>
+            </details>
+          ))}
+        </section>
+
+        <section className="final">
+          <h2 className="reveal">{c.finalHeadline}</h2>
+          <a className="btn-cta big reveal" href="#start" data-track="cta:final">
+            {c.cta} →
+          </a>
+          <p className="muted reveal">Free PDF. No signup. Under a minute.</p>
+        </section>
+      </main>
+
+      <footer className="foot">
+        <span>
+          © {new Date().getFullYear()} MarketMirror · Made in India · Public pages only. We never state traffic or ad spend as numbers because they cannot be seen from
+          outside.
+        </span>
       </footer>
-    </main>
+    </div>
   );
 }
