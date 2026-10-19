@@ -151,18 +151,34 @@ export default function Home() {
 
   async function downloadPdf() {
     if (!report) return;
+    setError("");
     setPdfBusy(true);
+    // iPhone/iPad Safari ignores programmatic downloads and blocks pop-ups opened
+    // after an await, so open the tab now, inside the click, and fill it in later.
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const tab = ios ? window.open("", "_blank") : null;
     try {
       const res = await fetch("/api/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(report) });
-      if (!res.ok) throw new Error("Could not build the PDF.");
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Could not build the PDF (error ${res.status}).`);
       const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "marketing-report.pdf";
-      a.click();
-      URL.revokeObjectURL(a.href);
+      const url = URL.createObjectURL(blob);
+      const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "marketing-report.pdf";
+      if (tab) {
+        tab.location.href = url;
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      // Revoking straight away cancels the download in Safari and Firefox.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
-      setError((err as Error).message);
+      tab?.close();
+      setError(`PDF download failed: ${(err as Error).message}`);
     } finally {
       setPdfBusy(false);
     }

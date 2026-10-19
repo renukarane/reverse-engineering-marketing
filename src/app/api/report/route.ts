@@ -29,7 +29,14 @@ export async function POST(req: Request) {
     : undefined;
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
-  const pdf = await renderReportPdf({ tier: plan ? "pro" : "free", teardown, plan }, appUrl);
+  let pdf: Buffer;
+  try {
+    pdf = await renderReportPdf({ tier: plan ? "pro" : "free", teardown, plan }, appUrl);
+  } catch (e) {
+    // Shows up in Vercel > Deployments > Logs.
+    console.error("[report] PDF render failed:", e);
+    return new Response("We could not build the PDF for this report. Please try again, or check your email for a copy.", { status: 500 });
+  }
   const slug = teardown.competitor.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "competitor";
   return new Response(new Uint8Array(pdf), {
     headers: {
