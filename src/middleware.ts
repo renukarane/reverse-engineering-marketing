@@ -7,6 +7,8 @@ export function middleware(req: NextRequest) {
   const q = req.nextUrl.searchParams;
   let v = q.get("ab") === "reset" ? null : parseVariant(req.cookies.get(AB_COOKIE)?.value);
   v ??= randomVariant();
+  // The design test is closed: everyone gets the editorial design unless previewing.
+  v.design = "b";
   for (const k of ["pos", "hook", "design"] as const) {
     const o = q.get(k);
     if (o === "a" || o === "b") v[k] = o as Arm;

@@ -26,7 +26,7 @@ export function reportEmail(r: Report, appUrl: string): { subject: string; html:
 
   const html = `<!doctype html><html><body style="margin:0;background:#f7f7fb;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#14161f">
 <div style="max-width:560px;margin:0 auto;padding:28px 20px">
-  <p style="font-weight:800;font-size:17px;margin:0 0 20px">Market<span style="color:#4f46e5">Mirror</span></p>
+  <p style="font-weight:800;font-size:17px;margin:0 0 20px">Marketing <span style="color:#ff4d2e">Scholars</span></p>
   <div style="background:#fff;border:1px solid #e3e5eb;border-radius:12px;padding:24px">
     <h1 style="font-size:21px;line-height:1.3;margin:0 0 12px">${esc(subject)}</h1>
     <p style="margin:0 0 16px;line-height:1.55">Your ${pro ? "full report" : "teardown"} is attached as a PDF.</p>
@@ -40,7 +40,7 @@ export function reportEmail(r: Report, appUrl: string): { subject: string; html:
     <p style="margin:14px 0 0"><a href="${esc(appUrl)}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:8px">Get my full marketing plan</a></p>`
     }
   </div>
-  <p style="font-size:12px;color:#5b6070;line-height:1.5;margin:16px 4px 0">You received this because this address was entered on MarketMirror to receive a report. Built from public pages only. Copy the mechanism, never the material.</p>
+  <p style="font-size:12px;color:#5b6070;line-height:1.5;margin:16px 4px 0">You received this because this address was entered on Marketing Scholars to receive a report. Built from public pages only. Copy the mechanism, never the material.</p>
 </div></body></html>`;
 
   const text = `${subject}\n\nYour ${pro ? "full report" : "teardown"} is attached as a PDF.\n\n${t.summary}\n${

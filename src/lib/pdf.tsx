@@ -351,9 +351,9 @@ function UpgradePage({ footer, url }: { footer: string; url: string }) {
 async function renderDesignedPdf(r: Report, appUrl: string): Promise<Buffer> {
   const d = r.teardown;
   const date = d.generatedAt.slice(0, 10);
-  const footer = `MarketMirror · ${d.competitor} · ${date}`;
+  const footer = `Marketing Scholars · ${d.competitor} · ${date}`;
   const doc = (
-    <Document title={`${d.competitor} marketing teardown`} author="MarketMirror" subject="Reverse-engineered marketing plan">
+    <Document title={`${d.competitor} marketing teardown`} author="Marketing Scholars" subject="Reverse-engineered marketing plan">
       <Page size="A4" style={s.cover}>
         <View style={{ marginTop: 120 }}>
           <Text style={s.kicker}>{r.tier === "pro" ? "FULL REPORT" : "FREE TEARDOWN"}</Text>
@@ -429,7 +429,7 @@ const ascii = (s: string) => t(s).normalize("NFKD").replace(/[^\x0A\x20-\x7E]/g,
 function renderPlainPdf(r: Report, appUrl: string): Promise<Buffer> {
   const d = r.teardown;
   return renderToBuffer(
-    <Document title={ascii(`${d.competitor} marketing teardown`)} author="MarketMirror">
+    <Document title={ascii(`${d.competitor} marketing teardown`)} author="Marketing Scholars">
       <Page size="A4" style={{ padding: 40, fontFamily: "Helvetica", fontSize: 10, lineHeight: 1.4 }}>
         <Text style={{ fontSize: 20, fontFamily: "Helvetica-Bold", lineHeight: 1.2, marginBottom: 6 }}>{ascii(r.plan ? `${r.plan.brandName} vs ${d.competitor}` : d.competitor)}</Text>
         <Text style={{ color: "#5b6070", marginBottom: 14 }}>{ascii(`${d.url} | ${d.generatedAt.slice(0, 10)} | ${d.engine}`)}</Text>

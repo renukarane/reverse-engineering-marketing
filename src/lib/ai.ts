@@ -68,7 +68,7 @@ export async function chatJson(system: string, user: string, maxTokens = 6000): 
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${p.key}`,
-          ...(p.name === "OpenRouter" ? { "HTTP-Referer": "https://marketmirror.app", "X-Title": "MarketMirror" } : {}),
+          ...(p.name === "OpenRouter" ? { "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://marketingscholars.com", "X-Title": "Marketing Scholars" } : {}),
         },
         body: JSON.stringify({
           model: p.model,
