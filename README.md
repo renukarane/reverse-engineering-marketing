@@ -41,6 +41,10 @@ Set at least one. They are tried in this order, and a rate limit or error on one
 
 Free-tier models and limits change often, so override the model with `GROQ_MODEL`, `GEMINI_MODEL` or `OPENROUTER_MODEL`.
 
+## Landing page and A/B tests
+
+The home page is a conversion-focused squeeze page with three A/B tests running at once: positioning, opener and design. Assignment happens in `src/middleware.ts`, copy lives in `src/lib/experiments.ts`, and events go through `/api/track` to Vercel logs and optionally PostHog. Preview a variant with `/?pos=a&hook=b&design=b`. See **[docs/LAUNCH.md](docs/LAUNCH.md)** for the test plan, how to read results, and the Product Hunt launch kit.
+
 ## Run locally
 
 ```bash
