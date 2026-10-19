@@ -13,14 +13,31 @@ const STEPS = [
 ];
 const PRO_STEPS = [...STEPS, "Reading your site", "Building strategies and channel plan", "Writing 30/60/90 plan and content calendar", "Writing SEO, ads, email and swipe file"];
 
+type Proof = { orderId: string; paymentId: string; signature: string };
+type RazorpayCtor = new (opts: Record<string, unknown>) => { open: () => void; on: (e: string, f: (r: unknown) => void) => void };
+
+// Razorpay Checkout runs as a modal from their script; loaded only when someone pays.
+function loadRazorpay(): Promise<RazorpayCtor> {
+  const w = window as unknown as { Razorpay?: RazorpayCtor };
+  if (w.Razorpay) return Promise.resolve(w.Razorpay);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = () => (w.Razorpay ? resolve(w.Razorpay) : reject(new Error("Payment window failed to load.")));
+    s.onerror = () => reject(new Error("Could not load the payment window. Check your connection and try again."));
+    document.body.appendChild(s);
+  });
+}
+
 export default function Home() {
   const [tier, setTier] = useState<Tier>("free");
   const [form, setForm] = useState({ competitorUrl: "", brandName: "", domain: "", niche: "", audience: "", goal: "", accessCode: "", email: "" });
-  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "stripe" | "code"; price: string; aiEnabled: boolean; emailEnabled: boolean } | null>(null);
+  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "razorpay" | "code"; price: string; aiEnabled: boolean; emailEnabled: boolean } | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [notice, setNotice] = useState("");
-  const [paidSession, setPaidSession] = useState<string | null>(null);
+  const [paidProof, setPaidProof] = useState<Proof | null>(null);
   const [loading, setLoading] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
   const [report, setReport] = useState<(Report & { delivery?: { status: string; to?: string } }) | null>(null);
@@ -29,23 +46,13 @@ export default function Home() {
 
   useEffect(() => {
     fetch("/api/config").then((r) => r.json()).then(setCfg).catch(() => setCfg({ proFreeBeta: true, proGate: "free", price: "", aiEnabled: false, emailEnabled: false }));
-    // Returning from Stripe Checkout: remember the paid session and build the report.
-    const q = new URLSearchParams(window.location.search);
-    const sid = q.get("session_id");
-    if (q.get("canceled")) setNotice("Checkout canceled. You were not charged.");
-    let saved: string | null = null;
+    // A payment from the last few days lets the buyer rebuild their report.
     try {
-      if (sid) localStorage.setItem("mm_paid_session", sid);
-      saved = localStorage.getItem("mm_paid_session");
+      const saved = localStorage.getItem("mm_paid_order");
+      if (saved) setPaidProof(JSON.parse(saved));
     } catch {
-      /* storage blocked */
+      /* storage blocked or corrupt */
     }
-    if (sid || q.get("canceled")) window.history.replaceState(null, "", "/");
-    if (sid) {
-      setTier("pro");
-      run({ sessionId: sid, tier: "pro" });
-    } else if (saved) setPaidSession(saved);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const steps = tier === "pro" ? PRO_STEPS : STEPS;
@@ -58,7 +65,7 @@ export default function Home() {
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
-  const needsCheckout = tier === "pro" && cfg?.proGate === "stripe" && !(showCode && form.accessCode);
+  const needsCheckout = tier === "pro" && cfg?.proGate === "razorpay" && !(showCode && form.accessCode);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,19 +75,58 @@ export default function Home() {
 
   async function checkout() {
     setError("");
-    setLoading(true);
+    setNotice("");
+    setPaying(true);
     try {
-      const res = await fetch("/api/checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
-      const data = await res.json();
-      if (!res.ok || !data.url) throw new Error(data.error || "Could not start checkout.");
-      window.location.href = data.url;
+      const [Razorpay, res] = await Promise.all([
+        loadRazorpay(),
+        fetch("/api/checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) }),
+      ]);
+      const order = await res.json();
+      if (!res.ok || !order.orderId) throw new Error(order.error || "Could not start payment.");
+      const rzp = new Razorpay({
+        key: order.keyId,
+        order_id: order.orderId,
+        amount: order.amount,
+        currency: order.currency,
+        name: order.name,
+        description: order.description,
+        prefill: { email: order.email || undefined },
+        theme: { color: "#4f46e5" },
+        // UPI only: hide cards, netbanking and wallets.
+        config: {
+          display: {
+            blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi" }] } },
+            sequence: ["block.upi"],
+            preferences: { show_default_blocks: false },
+          },
+        },
+        handler: (r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          const proof = { orderId: r.razorpay_order_id, paymentId: r.razorpay_payment_id, signature: r.razorpay_signature };
+          try {
+            localStorage.setItem("mm_paid_order", JSON.stringify(proof));
+          } catch {
+            /* storage blocked */
+          }
+          setPaying(false);
+          run({ payment: proof, tier: "pro" });
+        },
+        modal: {
+          ondismiss: () => {
+            setPaying(false);
+            setNotice("Payment cancelled. You were not charged.");
+          },
+        },
+      });
+      rzp.on("payment.failed", () => setNotice("That UPI payment did not go through. You can try again."));
+      rzp.open();
     } catch (err) {
       setError((err as Error).message);
-      setLoading(false);
+      setPaying(false);
     }
   }
 
-  async function run(payload: Record<string, string>) {
+  async function run(payload: Record<string, unknown>) {
     setError("");
     setNotice("");
     setReport(null);
@@ -93,7 +139,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
-      if (payload.sessionId) setPaidSession(null);
+      if (payload.payment) setPaidProof(null);
       setReport(data);
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (err) {
@@ -180,12 +226,12 @@ export default function Home() {
               </div>
               <div>
                 <label htmlFor="audience">Who you sell to <span className="opt">(optional)</span></label>
-                <input id="audience" placeholder="Solo coaches in the US" value={form.audience} onChange={set("audience")} />
+                <input id="audience" placeholder="D2C founders in India" value={form.audience} onChange={set("audience")} />
               </div>
             </div>
             <label htmlFor="goal">Main goal for the next 90 days <span className="opt">(optional)</span></label>
-            <input id="goal" placeholder="Get 200 trial signups a month" value={form.goal} onChange={set("goal")} />
-            {(cfg?.emailEnabled || cfg?.proGate === "stripe") && (
+            <input id="goal" placeholder="Get 200 paying customers a month" value={form.goal} onChange={set("goal")} />
+            {(cfg?.emailEnabled || cfg?.proGate === "razorpay") && (
               <>
                 <label htmlFor="email">
                   Your email <span className="opt">({cfg?.emailEnabled ? "we send the PDF here" : "for your receipt"})</span>
@@ -198,7 +244,7 @@ export default function Home() {
                 <label htmlFor="accessCode">Access code</label>
                 <input id="accessCode" required value={form.accessCode} onChange={set("accessCode")} />
               </>
-            ) : cfg?.proGate === "stripe" ? (
+            ) : cfg?.proGate === "razorpay" ? (
               <p className="note">
                 <button type="button" className="linkish" onClick={() => setShowCode(true)}>Have an access code?</button>
               </p>
@@ -206,22 +252,24 @@ export default function Home() {
           </>
         )}
 
-        <button className="btn full" disabled={loading}>
-          {loading
-            ? needsCheckout ? "Opening secure checkout…" : "Analysing…"
-            : needsCheckout ? `Continue to payment (${cfg?.price})` : tier === "pro" ? "Build my marketing plan" : "Reverse engineer their marketing"}
+        <button className="btn full" disabled={loading || paying}>
+          {paying
+            ? "Opening UPI payment…"
+            : loading
+              ? "Analysing…"
+              : needsCheckout ? `Pay ${cfg?.price} with UPI` : tier === "pro" ? "Build my marketing plan" : "Reverse engineer their marketing"}
         </button>
         {needsCheckout && (
           <p className="note">
-            Secure one-time payment by Stripe. Cards, Apple Pay and Google Pay accepted.
-            {cfg?.emailEnabled ? " Your PDF is emailed to you the moment payment completes." : " Your report starts building as soon as you return."}
+            One-time payment via UPI (Google Pay, PhonePe, Paytm, BHIM or any UPI app), secured by Razorpay.
+            {cfg?.emailEnabled ? " Your PDF is also emailed to you the moment payment completes." : " Your report starts building right after payment."}
           </p>
         )}
         {notice && <p className="note" role="status">{notice}</p>}
-        {paidSession && !loading && !report && (
+        {paidProof && !loading && !report && (
           <p className="note">
             You have a paid report from the last 7 days.{" "}
-            <button type="button" className="linkish" onClick={() => run({ sessionId: paidSession, tier: "pro" })}>Rebuild it</button>
+            <button type="button" className="linkish" onClick={() => run({ payment: paidProof, tier: "pro" })}>Rebuild it</button>
           </p>
         )}
         {error && <p className="error" role="alert">{error}</p>}
@@ -293,7 +341,7 @@ export default function Home() {
           {!report.plan && (
             <div className="upsell">
               <b>Want the plan, not just the teardown?</b>
-              <p className="note">{cfg?.proGate === "stripe" ? `One-time ${cfg.price}. ` : ""}Add your brand and domain. We will turn {t.competitor}&apos;s playbook into your positioning, strategies, 30/60/90 execution plan, content calendar, SEO keywords, ad angles and email sequence.</p>
+              <p className="note">{cfg?.proGate === "razorpay" ? `One-time ${cfg.price} via UPI. ` : ""}Add your brand and domain. We will turn {t.competitor}&apos;s playbook into your positioning, strategies, 30/60/90 execution plan, content calendar, SEO keywords, ad angles and email sequence.</p>
             </div>
           )}
         </div>
