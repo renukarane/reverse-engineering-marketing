@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { reportHtml } from "@/lib/reportHtml";
 import type { Report, Tier } from "@/lib/types";
 
 const STEPS = [
@@ -178,10 +179,20 @@ export default function Home() {
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
       tab?.close();
-      setError(`PDF download failed: ${(err as Error).message}`);
+      setError(`PDF download failed: ${(err as Error).message} Use "View report (save as PDF)" instead.`);
     } finally {
       setPdfBusy(false);
     }
+  }
+
+  // Opens the printable HTML report in a new tab. Built synchronously in the
+  // click, so pop-up blockers allow it, and it needs no server.
+  function viewReport() {
+    if (!report) return;
+    const url = URL.createObjectURL(new Blob([reportHtml(report, window.location.origin)], { type: "text/html" }));
+    const w = window.open(url, "_blank");
+    if (!w) window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 120_000);
   }
 
   function upgrade() {
@@ -351,6 +362,7 @@ export default function Home() {
 
           <div className="actions">
             <button className="btn" onClick={downloadPdf} disabled={pdfBusy}>{pdfBusy ? "Building PDF…" : "Download PDF report"}</button>
+            <button className="btn ghost" onClick={viewReport}>View report (save as PDF)</button>
             {!report.plan && <button className="btn ghost" onClick={upgrade}>Get my full marketing plan</button>}
           </div>
 

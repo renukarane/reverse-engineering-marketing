@@ -23,3 +23,13 @@ test("free email escapes HTML, lists gaps and upsells", () => {
   assert.ok(e.html.includes("https://app.example"));
   assert.ok(e.text.includes("Get your full marketing plan"));
 });
+
+test("printable HTML report escapes content and includes sections", async () => {
+  const { reportHtml } = await import("../src/lib/reportHtml");
+  const html = reportHtml({ tier: "free", teardown }, "https://app.example");
+  assert.ok(!html.includes("<script>"));
+  assert.ok(html.includes("Rival &lt;script&gt;"));
+  assert.ok(html.includes("9. Gaps: their blind spots"));
+  assert.ok(html.includes("window.print()"));
+  assert.ok(html.includes("https://app.example"));
+});
