@@ -3,7 +3,7 @@
 Paste a competitor's URL and get their reverse-engineered marketing as a PDF.
 Add your brand and domain and get a full end-to-end marketing plan built from it.
 
-| | Free teardown | Full plan (Pro, one-time Stripe payment) |
+| | Free teardown | Full plan (Pro, one-time UPI payment) |
 |---|---|---|
 | Input | Competitor URL | Competitor URL + your brand name + your domain (+ optional niche, audience, goal) |
 | Output | ~7 page PDF | ~17 page PDF |
@@ -53,7 +53,7 @@ npm run build                # production build
 
 ## Deploy (free)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing&project-name=marketmirror&env=GROQ_API_KEY&envDescription=Free%20Groq%20key%20for%20AI%20analysis%20(console.groq.com%2Fkeys).%20Add%20Stripe%20and%20Resend%20keys%20later.&envLink=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing%2Fblob%2Fmain%2F.env.example)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing&project-name=marketmirror&env=GROQ_API_KEY&envDescription=Free%20Groq%20key%20for%20AI%20analysis%20(console.groq.com%2Fkeys).%20Add%20Razorpay%20and%20Resend%20keys%20later.&envLink=https%3A%2F%2Fgithub.com%2Frenukarane%2Freverse-engineering-marketing%2Fblob%2Fmain%2F.env.example)
 
 Or import the existing repo, so Vercel deploys on every push to `main`:
 1. At https://vercel.com/new, choose **Import Git Repository** and pick `renukarane/reverse-engineering-marketing`. Vercel detects Next.js; keep the defaults.
@@ -67,51 +67,47 @@ The Hobby plan is free and the API routes set `maxDuration = 60`.
 
 | Stage | Add these env vars | What you can test |
 |---|---|---|
-| 1. Free reports | `GROQ_API_KEY` | Free teardown plus the full plan (free while Stripe is unset) |
+| 1. Free reports | `GROQ_API_KEY` | Free teardown plus the full plan (free while Razorpay is unset) |
 | 2. Email | `RESEND_API_KEY`, `EMAIL_FROM` | The PDF arrives by email |
-| 3. Payments | `STRIPE_SECRET_KEY` (test), `STRIPE_WEBHOOK_SECRET` | Paying with `4242 4242 4242 4242` emails the full plan |
+| 3. Payments | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` (test), `RAZORPAY_WEBHOOK_SECRET` | Paying with UPI ID `success@razorpay` emails the full plan |
 
-## Payments (Stripe)
+## Payments (Razorpay, UPI only, India)
 
-The full report is a **one-time Stripe Checkout payment per report** (default $19). Stripe fully supports US businesses and customers. Cards, Apple Pay, Google Pay and Link work out of the box, and promo codes are enabled.
+The full report is a **one-time UPI payment** (default ₹499) through Razorpay Standard Checkout. Cards, netbanking and wallets are hidden; buyers pay with Google Pay, PhonePe, Paytm, BHIM or any UPI app (QR on desktop, intent or collect on mobile).
 
 How it works, with no database:
-1. The user fills in the Pro form. `POST /api/checkout` validates the URLs and creates a Checkout Session. The report inputs (competitor URL, brand, domain, niche, audience, goal) are stored in the session's `metadata`.
-2. The user pays on Stripe's hosted page. Stripe sends them back to `/?session_id=cs_...`.
-3. The page calls `/api/analyze` with that `sessionId`. The server retrieves the session from Stripe, checks `payment_status === "paid"`, and builds the report from the **metadata, not from the browser**. A session id can therefore only rebuild the report it paid for.
-4. The session id is kept in the browser for 7 days, so the user can rebuild the report if they close the tab. Each paid session is limited to 5 builds an hour.
+1. The user fills in the Pro form. `POST /api/checkout` validates the URLs and creates a Razorpay **Order** in INR. The report inputs are stored in the order's `notes`.
+2. The page opens Razorpay Checkout as a modal, set to UPI only. On success Razorpay returns `order_id`, `payment_id` and `signature`.
+3. The page sends those to `/api/analyze`. The server verifies the HMAC signature, confirms with Razorpay that the payment belongs to the order and is captured (capturing it if it is only authorized), then builds the report from the **order notes, not from the browser**.
+4. The proof is kept in the browser for 7 days, so the user can rebuild the report.
+5. The webhook (`order.paid`) builds and emails the PDF the moment payment completes, even if the buyer closes the tab.
+6. A `report_emailed_at` note on the payment makes sure it is emailed exactly once.
 
 ### Setup
 
-1. Create a Stripe account at https://dashboard.stripe.com (a US business entity or sole proprietor works).
-2. In test mode, copy the secret key (`sk_test_...`) into `STRIPE_SECRET_KEY`.
-3. Optional: set `PRO_PRICE_CENTS`, or create a Product and Price in the dashboard and set `STRIPE_PRICE_ID`.
-4. Set `NEXT_PUBLIC_APP_URL` to your deployed URL.
-5. Test with card `4242 4242 4242 4242`, any future date and any CVC.
-6. When ready, complete account activation, then swap in the `sk_live_...` key.
-
-### Webhook (instant paid delivery)
-
-1. In Stripe, go to Developers, then Webhooks, and add an endpoint at `https://YOUR_APP/api/stripe/webhook`.
-2. Select the events `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
-3. Copy the signing secret (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
-
-The webhook verifies Stripe's signature and replies right away. It then builds the report in the background (Next.js `after()`) and emails it, so the buyer gets the PDF even if they close the tab after paying. For local testing, use `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+1. Sign up at https://dashboard.razorpay.com and complete KYC. Test mode works immediately; live mode needs activation.
+2. Go to **Account & Settings → API Keys**, generate a key, and set `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`.
+3. Go to **Account & Settings → Webhooks** and add `https://YOUR_APP/api/razorpay/webhook`:
+   - choose a secret and put it in `RAZORPAY_WEBHOOK_SECRET`
+   - tick the event `order.paid`
+4. Set `NEXT_PUBLIC_APP_URL`, and optionally `PRO_PRICE_PAISE`.
+5. Test with UPI ID `success@razorpay` (succeeds) or `failure@razorpay` (fails) in test mode.
+6. When ready, swap in the live keys (`rzp_live_...`) and create the webhook again in live mode.
 
 ### Gating modes (`proGate()` in `src/lib/billing.ts`)
 
-| `PRO_FREE_BETA` | `STRIPE_SECRET_KEY` | Full report |
+| `PRO_FREE_BETA` | Razorpay keys | Full report |
 |---|---|---|
 | unset | unset | Free (beta) |
-| unset | set | Paid via Stripe |
+| unset | set | Paid via UPI |
 | `true` | any | Free |
 | `false` | unset | Access code only |
 
-Access codes in `PRO_ACCESS_CODES` unlock the full report in every mode, which is useful for testers and comps.
+Access codes in `PRO_ACCESS_CODES` unlock the full report in every mode.
 
-### Sales tax
+### GST
 
-Set `STRIPE_AUTOMATIC_TAX=true` after enabling Stripe Tax in the dashboard. Whether you must collect sales tax depends on the states you have nexus in, so check with an accountant.
+If your turnover crosses the GST threshold, or you need a GST invoice for B2B buyers, register for GST and add invoicing. Razorpay can generate invoices. Check with your CA.
 
 ## Email delivery (Resend)
 
@@ -120,12 +116,12 @@ Reports are emailed as PDF attachments through [Resend](https://resend.com). The
 | Report | When it is emailed | Email address used |
 |---|---|---|
 | Free teardown | As soon as it is built. Email becomes a required field, so this is your lead capture. | The one typed in the form |
-| Paid full plan | By the Stripe webhook the moment payment completes | The one the buyer entered at Stripe Checkout |
-| Paid, no webhook set | When the buyer lands back on the site | The one the buyer entered at Stripe Checkout |
+| Paid full plan | By the Razorpay webhook the moment payment completes | The one typed in the form, else the one entered in Razorpay Checkout |
+| Paid, no webhook set | Right after payment, in the page | Same as above |
 | Access-code report | As soon as it is built, if an email is given | The one typed in the form |
 
 A paid report is emailed **once per payment**:
-- A `report_emailed_at` flag is stored on the Stripe PaymentIntent's metadata, so there is still no database.
+- A `report_emailed_at` note is stored on the Razorpay payment, so there is still no database.
 - An in-flight guard stops webhook retries and page rebuilds from sending duplicates.
 - If the webhook fails, the success page sends the PDF itself once the payment is more than 5 minutes old and still unsent.
 
@@ -155,10 +151,10 @@ The server fetches URLs that users type in, so every request goes through `src/l
 ```bash
 node tests/fixtures/server.mjs &              # fake competitor site on :4321
 PORT=4400 node tests/fixtures/mock-llm.mjs &  # fake OpenAI-compatible LLM
-PORT=4500 node tests/fixtures/mock-stripe.mjs & # fake Stripe Checkout + PaymentIntents API
+PORT=4500 node tests/fixtures/mock-razorpay.mjs & # fake Razorpay Orders/Payments; GET :4500/__pay/{order_id} simulates a UPI payment
 PORT=4600 node tests/fixtures/mock-resend.mjs & # fake Resend; GET :4600/__sent lists sent emails
 ALLOW_PRIVATE_FETCH=true OPENAI_COMPAT_BASE_URL=http://127.0.0.1:4400/v1 \
-  STRIPE_SECRET_KEY=sk_test_dummy STRIPE_API_BASE=http://127.0.0.1:4500 STRIPE_WEBHOOK_SECRET=whsec_test \
+  RAZORPAY_KEY_ID=rzp_test_x RAZORPAY_KEY_SECRET=rzp_secret_test RAZORPAY_API_BASE=http://127.0.0.1:4500 RAZORPAY_WEBHOOK_SECRET=wh_test \
   RESEND_API_KEY=re_test RESEND_API_BASE=http://127.0.0.1:4600 EMAIL_FROM="Test <t@example.com>" npm run dev
 curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
   -d '{"competitorUrl":"http://127.0.0.1:4321","tier":"pro","brandName":"Acme","domain":"acme.com"}'
@@ -174,8 +170,8 @@ curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
 
 ## API
 
-- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", email?, brandName?, domain?, niche?, audience?, goal?, accessCode?, sessionId? }` returns a report as JSON, plus `delivery: { status: "sent"|"already"|"pending"|"failed"|"none", to? }`. It returns 402 when payment is needed.
-- `POST /api/checkout` with `{ competitorUrl, brandName, domain, niche?, audience?, goal?, email? }` returns `{ url }` for Stripe Checkout.
+- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", email?, brandName?, domain?, niche?, audience?, goal?, accessCode?, payment?: { orderId, paymentId, signature } }` returns a report as JSON, plus `delivery: { status: "sent"|"already"|"pending"|"failed"|"none", to? }`. It returns 402 when payment is needed.
+- `POST /api/checkout` with `{ competitorUrl, brandName, domain, niche?, audience?, goal?, email? }` returns `{ orderId, amount, currency, keyId }` for Razorpay Checkout.
 - `POST /api/report` with that report JSON returns the `application/pdf`.
-- `POST /api/stripe/webhook` is the Stripe webhook. It builds and emails paid reports.
+- `POST /api/razorpay/webhook` is the Razorpay webhook (`order.paid`). It builds and emails paid reports.
 - `GET /api/config` returns `{ proFreeBeta, proGate, price, aiEnabled, emailEnabled }`.

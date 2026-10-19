@@ -1,5 +1,5 @@
 import { analyze } from "./analyze";
-import { alreadyEmailed, markEmailed, type PaidSession } from "./billing";
+import { alreadyEmailed, markEmailed, type PaidOrder } from "./billing";
 import { emailConfigured, sendReportEmail } from "./email";
 import { renderReportPdf } from "./pdf";
 import type { Report } from "./types";
@@ -27,31 +27,31 @@ export async function emailReport(to: string, report: Report, origin?: string): 
 const inFlight = new Set<string>();
 
 /** Paid path: email a paid report once per payment, whoever gets there first. */
-export async function emailPaidReportOnce(paid: PaidSession, report: Report, origin?: string): Promise<"sent" | "already" | "failed"> {
+export async function emailPaidReportOnce(paid: PaidOrder, report: Report, origin?: string): Promise<"sent" | "already" | "failed"> {
   if (!paid.email) return "failed";
-  const key = paid.paymentIntentId ?? paid.email;
+  const key = paid.paymentId;
   if (inFlight.has(`send:${key}`)) return "already";
   inFlight.add(`send:${key}`);
   try {
-    if (await alreadyEmailed(paid.paymentIntentId)) return "already";
+    if (await alreadyEmailed(paid.paymentId)) return "already";
     // Claim before sending so another instance that checks next sees it; release on failure.
-    await markEmailed(paid.paymentIntentId);
+    await markEmailed(paid.paymentId);
     const sent = await emailReport(paid.email, report, origin);
-    if (!sent) await markEmailed(paid.paymentIntentId, "");
+    if (!sent) await markEmailed(paid.paymentId, "");
     return sent ? "sent" : "failed";
   } finally {
     inFlight.delete(`send:${key}`);
   }
 }
 
-/** Webhook path: build the paid report from the session and email it. */
-export async function fulfilPaidSession(paid: PaidSession): Promise<void> {
+/** Webhook path: build the paid report from the order and email it. */
+export async function fulfilPaidOrder(paid: PaidOrder): Promise<void> {
   if (!paid.email) return;
-  const key = `build:${paid.paymentIntentId ?? paid.email}`;
+  const key = `build:${paid.paymentId}`;
   if (inFlight.has(key)) return;
   inFlight.add(key);
   try {
-    if (await alreadyEmailed(paid.paymentIntentId)) return;
+    if (await alreadyEmailed(paid.paymentId)) return;
     const report = await analyze({ competitorUrl: paid.inputs.competitorUrl, tier: "pro", brand: paid.inputs });
     await emailPaidReportOnce(paid, report);
   } finally {
