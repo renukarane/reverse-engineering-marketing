@@ -223,7 +223,7 @@ export default async function Home() {
                 For 18 years, I&apos;ve done the same thing before every big campaign: <b>study what is already working</b>.
               </p>
               <p>
-                At Atlas Copco, I marketed four industrial brands across the Middle East and helped influence more than $12M in revenue. Before that, I ran channel
+                I&apos;ve marketed four global industrial brands across the Middle East and helped influence more than $12M in revenue. Before that, I ran channel
                 marketing for a global cybersecurity brand across 400+ partners in India, and led digital teams at agencies.
               </p>
               <p>

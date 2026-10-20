@@ -29,7 +29,7 @@ test("printable HTML report escapes content and includes sections", async () => 
   const html = reportHtml({ tier: "free", teardown }, "https://app.example");
   assert.ok(!html.includes("<script>"));
   assert.ok(html.includes("Rival &lt;script&gt;"));
-  assert.ok(html.includes("9. Gaps: their blind spots"));
+  assert.ok(html.includes(">09</span>Gaps: their blind spots"));
   assert.ok(html.includes("window.print()"));
   assert.ok(html.includes("https://app.example"));
 });

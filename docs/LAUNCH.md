@@ -119,7 +119,7 @@ Pick the one matching the winning `pos` arm, if you have data by then.
 ### Maker first comment (post within 2 minutes)
 > Hey Product Hunt 👋 I'm Renuka.
 >
-> For 18 years I've done the same homework before every big campaign: study what's already working. At Atlas Copco I marketed four industrial brands across the Middle East, and before that I ran channel marketing across 400+ partners in India. The brands that grew fastest never started from a blank page. They took apart the best players in their market, understood *why* their marketing worked, then built something better.
+> For 18 years I've done the same homework before every big campaign: study what's already working. I've marketed four global industrial brands across the Middle East, helped influence $12M+ in revenue, and I ran channel marketing across 400+ partners in India. The brands that grew fastest never started from a blank page. They took apart the best players in their market, understood *why* their marketing worked, then built something better.
 >
 > That homework takes weeks. Marketing Scholars does it in a minute.
 >
