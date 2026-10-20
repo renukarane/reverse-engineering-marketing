@@ -21,7 +21,12 @@ const table = (head: string[], rows: string[][]) =>
         .join("")}</tbody></table></div>`
     : "";
 
-const section = (title: string, body: string) => (body.trim() ? `<section><h2>${esc(title)}</h2>${body}</section>` : "");
+const section = (title: string, body: string) => {
+  if (!body.trim()) return "";
+  const m = title.match(/^([0-9A-Z]{1,2})\.\s+(.*)$/);
+  const num = m ? (/^\d+$/.test(m[1]) ? m[1].padStart(2, "0") : m[1]) : "";
+  return `<section><h2>${num ? `<span class="num">${num}</span>` : ""}${esc(m ? m[2] : title)}</h2><span class="rule"></span>${body}</section>`;
+};
 const h3 = (t: string, body: string) => (body.trim() ? `<h3>${esc(t)}</h3>${body}` : "");
 
 function teardownHtml(d: CompetitorTeardown): string {
@@ -89,7 +94,7 @@ function teardownHtml(d: CompetitorTeardown): string {
 
 function planHtml(p: ProPlan, comp: string): string {
   return [
-    `<div class="part"><p class="kicker">PART TWO</p><h1>${esc(p.brandName)}: end-to-end marketing plan</h1><p class="muted">Built from the reverse-engineered playbook of ${esc(comp)}.</p></div>`,
+    `<div class="part"><p class="kicker">PART TWO</p><h1>${esc(p.brandName)}: your marketing plan</h1><p class="muted">Built from what already works for ${esc(comp)}. Study it, then build yours.</p></div>`,
     section("A. Executive summary", `<div class="callout">${esc(p.executiveSummary)}</div>`),
     section(
       "B. Positioning",
@@ -167,56 +172,81 @@ export function reportHtml(r: Report, appUrl: string): string {
   const title = r.plan ? `${r.plan.brandName} vs ${d.competitor}` : d.competitor;
   const upsell = r.plan
     ? ""
-    : `<section class="callout upsell"><h2>Turn this teardown into your own marketing plan</h2><p>The full report adds positioning, strategies, a 30/60/90 plan with kill rules, a 12-week content calendar, SEO keywords, ad angles, an email sequence and a swipe file for your brand.</p><p><a href="${esc(appUrl)}">Get it at ${esc(appUrl)}</a></p></section>`;
+    : `<section class="upsell"><h2>You've studied their strategy. Now build yours.</h2><p>The full report adds positioning, strategies, a 30/60/90 plan with kill rules, a 12-week content calendar, SEO keywords, ad angles, an email sequence and a swipe file for your brand.</p><p><a href="${esc(appUrl)}">Build your plan →</a></p></section>`;
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} - Marketing Scholars ${r.plan ? "full report" : "teardown"}</title>
 <style>
-  :root { --ink:#14161f; --muted:#5b6070; --line:#e3e5eb; --brand:#4f46e5; --soft:#eef0ff; --ok:#0f766e; --bad:#b91c1c; }
+  :root { --ink:#141210; --muted:#5d574e; --line:#e4ddcf; --paper:#f6f2ea; --surface:#fffdf8; --brand:#ff4d2e; --yellow:#ffc83d; --blue:#1b4dff; --soft:#fff1d6; --ok:#0f7a5c; --bad:#c62828;
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
   * { box-sizing: border-box; }
-  body { margin:0; background:#f7f7fb; color:var(--ink); font:15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
   .bar { position:sticky; top:0; background:var(--ink); color:#fff; padding:10px 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; z-index:1; }
-  .bar button { background:var(--brand); color:#fff; border:0; border-radius:8px; padding:10px 16px; font:inherit; font-weight:700; cursor:pointer; }
+  .bar button { background:var(--brand); color:#fff; border:0; border-radius:8px; padding:10px 16px; font:inherit; font-weight:700; cursor:pointer; box-shadow:3px 3px 0 var(--yellow); }
   .bar small { opacity:.8; }
-  main { max-width:860px; margin:0 auto; padding:24px 16px 60px; background:#fff; }
-  .cover { padding:28px 0 18px; border-bottom:2px solid var(--ink); margin-bottom:18px; }
-  .kicker { color:var(--brand); font-weight:700; letter-spacing:.12em; font-size:12px; margin:0 0 6px; }
-  h1 { font-size:30px; line-height:1.15; margin:0 0 8px; letter-spacing:-.02em; }
-  h2 { color:var(--brand); font-size:20px; margin:28px 0 10px; }
-  h3 { font-size:15px; margin:16px 0 6px; }
+  .bar .mark, .brand .mark { display:inline-block; width:14px; height:14px; border-radius:50%; vertical-align:-2px; margin-right:6px; background:conic-gradient(var(--ink) 0 50%, var(--brand) 50% 100%); box-shadow:0 0 0 1.5px #fff; }
+  main { max-width:880px; margin:22px auto 60px; padding:28px clamp(16px,4vw,44px) 40px; background:var(--surface); border:2px solid var(--ink); border-radius:12px; box-shadow:8px 8px 0 var(--ink); }
+  .cover { padding:10px 0 22px; border-bottom:2px solid var(--ink); margin-bottom:22px; }
+  .brand { font-weight:800; margin:0 0 30px; } .brand b { color:var(--brand); }
+  .kicker { display:inline-block; color:var(--brand); border:1.5px solid var(--brand); border-radius:999px; padding:3px 10px; font-weight:700; letter-spacing:.12em; font-size:11px; margin:0 0 14px; }
+  h1 { font-family:var(--serif); font-size:clamp(30px,5vw,46px); line-height:1.08; margin:0 0 10px; letter-spacing:-.02em; }
+  h1 .hl { background:linear-gradient(transparent 58%, var(--yellow) 58%, var(--yellow) 92%, transparent 92%); }
+  h1 .accent { color:var(--brand); }
+  h2 { font-family:var(--serif); font-size:24px; margin:34px 0 4px; letter-spacing:-.01em; display:flex; align-items:center; gap:10px; }
+  h2 .num { font-family:-apple-system, "Segoe UI", Roboto, sans-serif; font-size:11px; background:var(--brand); color:#fff; border-radius:4px; padding:2px 6px; letter-spacing:.04em; }
+  h2::after { content:""; } section > h2 + * { margin-top:14px; }
+  section h2 { border-bottom:none; } section { position:relative; }
+  section .rule { display:block; width:46px; height:4px; background:var(--yellow); margin:0 0 12px; }
+  h3 { font-size:12px; letter-spacing:.1em; text-transform:uppercase; margin:18px 0 6px; }
   p { margin:0 0 8px; }
   .muted { color:var(--muted); }
-  .callout { background:var(--soft); border-radius:8px; padding:14px 16px; }
-  .card { border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:0 0 10px; }
+  .callout { background:var(--soft); border-left:4px solid var(--brand); border-radius:6px; padding:14px 16px; }
+  .card { border:1.5px solid var(--ink); border-radius:8px; padding:12px 14px; margin:0 0 12px; background:#fff; box-shadow:4px 4px 0 var(--ink); }
   .row { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:4px; }
-  .pill { font-size:11px; text-transform:uppercase; font-weight:700; color:#fff; padding:2px 8px; border-radius:4px; background:var(--muted); }
-  .pill.active { background:var(--ok); } .pill.likely { background:var(--brand); } .pill.absent { background:var(--bad); }
-  dl { display:grid; grid-template-columns:minmax(110px, 170px) 1fr; gap:4px 14px; margin:6px 0; }
-  dt { font-weight:700; color:var(--muted); font-size:13px; } dd { margin:0; }
-  ul, ol { margin:4px 0 8px; padding-left:20px; } li { margin-bottom:3px; }
-  .tw { overflow-x:auto; margin:6px 0 12px; }
+  .pill { font-size:10px; text-transform:uppercase; font-weight:800; letter-spacing:.06em; color:#fff; padding:2px 8px; border-radius:4px; background:var(--muted); }
+  .pill.active { background:var(--ok); } .pill.likely { background:var(--blue); } .pill.absent { background:var(--bad); }
+  .stats { display:flex; flex-wrap:wrap; gap:28px; margin:18px 0; } .stats b { display:block; font-family:var(--serif); font-size:34px; color:var(--brand); line-height:1; } .stats span { font-size:12px; color:var(--muted); }
+  dl { display:grid; grid-template-columns:minmax(110px, 170px) 1fr; gap:6px 14px; margin:6px 0; }
+  dt { font-weight:700; color:var(--muted); font-size:11px; letter-spacing:.08em; text-transform:uppercase; padding-top:2px; } dd { margin:0; }
+  ul { list-style:none; margin:4px 0 8px; padding-left:0; } ul li { position:relative; padding-left:18px; margin-bottom:5px; }
+  ul li::before { content:""; position:absolute; left:0; top:.55em; width:7px; height:7px; background:var(--brand); }
+  ol { margin:4px 0 8px; padding-left:20px; } ol li { margin-bottom:4px; }
+  .tw { overflow-x:auto; margin:8px 0 14px; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
-  th { text-align:left; border-bottom:2px solid var(--ink); padding:6px; } td { border-bottom:1px solid var(--line); padding:6px; vertical-align:top; }
-  .part { margin-top:36px; padding-top:20px; border-top:2px solid var(--ink); }
-  .upsell { margin-top:28px; } .upsell h2 { margin-top:0; }
-  footer { color:var(--muted); font-size:12px; margin-top:30px; border-top:1px solid var(--line); padding-top:10px; }
-  @media (max-width:600px) { dl { grid-template-columns:1fr; } dt { margin-top:6px; } h1 { font-size:24px; } }
-  @page { size:A4; margin:16mm 14mm; }
+  th { text-align:left; background:var(--ink); color:#fff; padding:7px 8px; font-size:12px; } td { border-bottom:1px solid var(--line); padding:7px 8px; vertical-align:top; }
+  tr:nth-child(even) td { background:var(--paper); } td:first-child { font-weight:700; }
+  .part { margin-top:40px; padding:22px; background:var(--ink); color:#fff; border-radius:10px; }
+  .part .kicker { color:var(--yellow); border-color:var(--yellow); } .part h1 { color:#fff; font-size:30px; } .part .muted { color:#d9d3c7; }
+  .upsell { margin-top:30px; background:var(--ink); color:#fff; border-radius:10px; padding:22px; border-left:none; }
+  .upsell h2 { margin-top:0; color:#fff; } .upsell a { display:inline-block; margin-top:6px; background:var(--brand); color:#fff; padding:10px 16px; border-radius:8px; font-weight:800; text-decoration:none; }
+  footer { color:var(--muted); font-size:12px; margin-top:30px; border-top:1.5px solid var(--ink); padding-top:10px; }
+  @media (max-width:600px) { dl { grid-template-columns:1fr; } dt { margin-top:6px; } main { box-shadow:4px 4px 0 var(--ink); } }
+  @page { size:A4; margin:14mm 13mm; }
   @media print {
-    body { background:#fff; font-size:11.5px; } .bar { display:none; } main { max-width:none; padding:0; }
+    body { background:#fff; font-size:11.5px; } .bar { display:none; } main { max-width:none; margin:0; padding:0; border:0; box-shadow:none; }
     .card, tr, dl, .callout { break-inside:avoid; } h2, h3 { break-after:avoid; } .part { break-before:page; }
-    a { color:var(--ink); text-decoration:none; } .tw { overflow:visible; }
+    a { color:inherit; text-decoration:none; } .tw { overflow:visible; }
     * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   }
 </style></head>
 <body>
-<div class="bar"><span><b>Marketing Scholars</b> <small>${esc(title)}</small></span><span><small>Choose "Save as PDF" as the printer</small> <button onclick="window.print()">Save as PDF</button></span></div>
+<div class="bar"><span><span class="mark"></span><b>Marketing Scholars</b> <small>${esc(title)}</small></span><span><small>Choose "Save as PDF" as the printer</small> <button onclick="window.print()">Save as PDF</button></span></div>
 <main>
   <div class="cover">
+    <p class="brand"><span class="mark"></span>Marketing <b>Scholars</b></p>
     <p class="kicker">${r.plan ? "FULL REPORT" : "FREE TEARDOWN"}</p>
-    <h1>${esc(title)}</h1>
-    <p class="muted">${r.plan ? "Reverse-engineered competitor teardown and your end-to-end marketing plan" : "Reverse-engineered marketing teardown"}</p>
+    ${
+      r.plan
+        ? `<h1>${esc(r.plan.brandName)} <span class="muted">vs</span> ${esc(d.competitor)}<br><span class="hl">Their strategy, reverse-engineered.</span> <span class="accent">Your plan, built from it.</span></h1>`
+        : `<h1>${esc(d.competitor)}'s marketing strategy, <span class="hl">reverse-engineered.</span> <span class="accent">Study it. Then build yours.</span></h1>`
+    }
+    <div class="stats">
+      <div><b>${d.channels.filter((c) => c.status === "active" || c.status === "likely").length}</b><span>channels mapped</span></div>
+      <div><b>${d.whatWorks.length}</b><span>tactics scored</span></div>
+      <div><b>${d.gaps.length}</b><span>blind spots found</span></div>
+      ${r.plan ? `<div><b>90</b><span>day plan for you</span></div>` : ""}
+    </div>
     ${kv([
       ["Competitor", d.url],
       ["Your brand", r.plan ? `${r.plan.brandName} (${r.plan.domain})` : ""],
