@@ -1,5 +1,7 @@
+import { isAdmin } from "@/lib/admin";
 import { normalizePlan, normalizeTeardown } from "@/lib/normalize";
 import { renderReportPdf } from "@/lib/pdf";
+import { confirmFlowOn } from "@/lib/requests";
 import type { Report } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -7,7 +9,9 @@ export const maxDuration = 30;
 
 // Renders a report the client already holds into a PDF. Input is re-normalized so
 // the renderer only ever sees well-formed, length-capped strings.
+// Once reports go out by email only, this is for the admin's test reports.
 export async function POST(req: Request) {
+  if (confirmFlowOn() && !isAdmin(req)) return new Response("Reports are sent by email.", { status: 403 });
   const raw = await req.text();
   if (raw.length > 400_000) return new Response("Report too large", { status: 413 });
   let body: Partial<Report>;

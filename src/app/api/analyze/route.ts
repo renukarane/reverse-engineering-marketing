@@ -1,46 +1,36 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { validAccessCode } from "@/lib/access";
+import { isAdmin } from "@/lib/admin";
 import { analyze } from "@/lib/analyze";
 import { alreadyEmailed, paidFromProof, proGate, webhookConfigured, type PaidOrder } from "@/lib/billing";
-import { emailPaidReportOnce, emailReport } from "@/lib/deliver";
+import { emailPaidReportOnce, emailReport, fulfilPaidOrder } from "@/lib/deliver";
 import { emailConfigured } from "@/lib/email";
-import { validateBrand } from "@/lib/brandInput";
 import { rateLimit } from "@/lib/rateLimit";
-import { FetchBlockedError, normalizeUrl } from "@/lib/safeFetch";
+import { checkReportInput, clientIp, EmailSchema, ReportFields } from "@/lib/reportInput";
+import { confirmFlowOn, paidStatus } from "@/lib/requests";
+import { FetchBlockedError } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const field = (max: number) => z.string().trim().max(max).optional();
-const Body = z.object({
-  competitorUrl: z.string().trim().max(300).default(""),
-  tier: z.enum(["free", "pro"]).default("free"),
-  stage: z.enum(["existing", "new"]).optional(),
-  brandName: field(80),
-  domain: field(200),
-  niche: field(160),
-  audience: field(200),
-  goal: field(200),
-  location: field(80),
-  budget: field(80),
-  accessCode: field(100),
+const Body = ReportFields.extend({
   payment: z.object({ orderId: z.string().max(60), paymentId: z.string().max(60), signature: z.string().max(128) }).optional(),
-  email: z.string().trim().max(200).optional(),
 });
-
-const EmailSchema = z.string().email();
 
 type Delivery = { status: "sent" | "already" | "pending" | "failed" | "none"; to?: string };
 
-function clientIp(req: Request): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0].trim() || req.headers.get("x-real-ip") || "local";
-}
-
+// Builds a report and returns it as JSON. Who can see it:
+// - the admin, always (for testing; nothing is emailed);
+// - everyone, until Supabase and email are set up (the original on-page flow).
+// Once they are, visitors use /api/request and get the report by email only, and
+// a paid order handed in here is built and emailed in the background.
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Please enter a valid competitor URL." }, { status: 400 });
   let b = parsed.data;
+  const admin = isAdmin(req);
+  const emailFirst = confirmFlowOn() && !admin;
   let paid: PaidOrder | null = null;
 
   // A paid Razorpay order carries its own inputs; they override anything sent.
@@ -49,48 +39,49 @@ export async function POST(req: Request) {
     paid = await paidFromProof(b.payment);
     if (!paid) return NextResponse.json({ error: "We could not confirm that payment, or it is more than 7 days old.", code: "PAYWALL" }, { status: 402 });
     b = { ...b, ...paid.inputs, tier: "pro" };
+    if (emailFirst) {
+      if (!paid.email) return NextResponse.json({ error: "We have your payment but no email to send the report to. Please contact support." }, { status: 400 });
+      const rl = rateLimit(`payment:${paid.paymentId}`, 10);
+      if (!rl.ok) return NextResponse.json({ error: "Please wait a few minutes and try again." }, { status: 429 });
+      const status = await paidStatus(paid.orderId);
+      const order = paid;
+      const origin = new URL(req.url).origin;
+      if (status !== "sent") after(() => fulfilPaidOrder(order, origin).catch((e) => console.error("[analyze] paid fulfilment failed:", e)));
+      return NextResponse.json({ delivery: { status: status === "sent" ? "already" : "pending", to: paid.email } satisfies Delivery });
+    }
   }
 
+  if (emailFirst) return NextResponse.json({ error: "Reports are sent by email. Please refresh the page and try again." }, { status: 403 });
+
   // Unpaid reports are emailed to the address given; the free teardown requires one when email is set up.
-  const email = b.email ? b.email.toLowerCase() : "";
-  if (!paid) {
+  const email = b.email && !admin ? b.email.toLowerCase() : "";
+  if (!paid && !admin) {
     if (email && !EmailSchema.safeParse(email).success) return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     if (b.tier === "free" && emailConfigured() && !email) return NextResponse.json({ error: "Enter your email and we will send you the PDF." }, { status: 400 });
   }
-  if (b.competitorUrl.length < 3) return NextResponse.json({ error: "Please enter a valid competitor URL." }, { status: 400 });
 
-  try {
-    normalizeUrl(b.competitorUrl);
-  } catch (e) {
-    const msg = e instanceof FetchBlockedError ? e.message : "That does not look like a valid public URL.";
-    return NextResponse.json({ error: msg }, { status: 400 });
-  }
+  const checked = checkReportInput(b);
+  if ("error" in checked) return NextResponse.json({ error: checked.error }, { status: 400 });
 
-  const checked = b.tier === "pro" ? validateBrand(b) : null;
-  if (checked && "error" in checked) return NextResponse.json({ error: checked.error }, { status: 400 });
-  const brand = checked && "brand" in checked ? checked.brand : undefined;
-
-  if (b.tier === "pro" && !paid && proGate() !== "free" && !validAccessCode(b.accessCode)) {
+  if (b.tier === "pro" && !paid && !admin && proGate() !== "free" && !validAccessCode(b.accessCode)) {
     return NextResponse.json(
       { error: proGate() === "razorpay" ? "The full report needs payment." : "The full report needs a valid access code.", code: "PAYWALL" },
       { status: 402 },
     );
   }
 
-  // Paying customers are limited per purchase, not per network.
-  const rl = paid ? rateLimit(`payment:${paid.paymentId}`, 5) : rateLimit(clientIp(req));
-  const emailRl = !paid && email ? rateLimit(`email:${email}`, 3) : { ok: true, retryAfterSec: 0 };
-  if (!emailRl.ok) return NextResponse.json({ error: "Too many reports sent to that email. Try again later." }, { status: 429 });
-  if (!rl.ok) {
-    return NextResponse.json({ error: `Too many reports from your network. Try again in ${Math.ceil(rl.retryAfterSec / 60)} minutes.` }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
+  if (!admin) {
+    // Paying customers are limited per purchase, not per network.
+    const rl = paid ? rateLimit(`payment:${paid.paymentId}`, 5) : rateLimit(clientIp(req));
+    const emailRl = !paid && email ? rateLimit(`email:${email}`, 3) : { ok: true, retryAfterSec: 0 };
+    if (!emailRl.ok) return NextResponse.json({ error: "Too many reports sent to that email. Try again later." }, { status: 429 });
+    if (!rl.ok) {
+      return NextResponse.json({ error: `Too many reports from your network. Try again in ${Math.ceil(rl.retryAfterSec / 60)} minutes.` }, { status: 429, headers: { "retry-after": String(rl.retryAfterSec) } });
+    }
   }
 
   try {
-    const report = await analyze({
-      competitorUrl: b.competitorUrl,
-      tier: b.tier,
-      brand,
-    });
+    const report = await analyze({ competitorUrl: b.competitorUrl, tier: checked.tier, brand: checked.brand });
     const origin = new URL(req.url).origin;
     let delivery: Delivery = { status: "none" };
     if (paid) {

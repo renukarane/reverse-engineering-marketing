@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createOrder, priceLabel, proGate } from "@/lib/billing";
 import { validateBrand } from "@/lib/brandInput";
+import { insertRequest } from "@/lib/db";
+import { confirmFlowOn } from "@/lib/requests";
 import { FetchBlockedError, normalizeUrl } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
@@ -27,6 +29,7 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Please fill in the competitor URL and your details." }, { status: 400 });
   const { email, competitorUrl, ...raw } = parsed.data;
+  if (confirmFlowOn() && !email) return NextResponse.json({ error: "Enter your email. We send your full plan there." }, { status: 400 });
   try {
     normalizeUrl(competitorUrl);
   } catch (e) {
@@ -37,6 +40,11 @@ export async function POST(req: Request) {
   const inputs = { competitorUrl, ...checked.brand };
   try {
     const order = await createOrder(inputs, email || undefined);
+    // Log the order so the admin sees unpaid attempts too. Fulfilment creates the
+    // row itself if this fails, so a database hiccup never blocks a payment.
+    if (confirmFlowOn() && email) {
+      await insertRequest({ email: email.toLowerCase(), tier: "pro", inputs, status: "awaiting_payment", order_id: order.orderId }).catch((e) => console.error("[checkout] could not log order:", (e as Error).message));
+    }
     return NextResponse.json({ ...order, name: "Marketing Scholars", description: `Full marketing plan (${priceLabel()})`, email: email || "" });
   } catch (e) {
     console.error("[checkout]", e);

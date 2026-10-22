@@ -10,7 +10,7 @@ This guide covers what the product does, how to talk about it, what content to m
 
 ## 1. What the product does
 
-A visitor pastes a competitor's website address. In under a minute, Marketing Scholars reads that competitor's public pages and returns their marketing strategy as a well-designed PDF. The PDF is also emailed, and it can be viewed and saved as a web page.
+A visitor pastes a competitor's website address. In under a minute, Marketing Scholars reads that competitor's public pages and emails their marketing strategy as a well-designed PDF. The report goes by email only: the visitor confirms their email first (one click), then the PDF arrives within about two minutes. Paid plans arrive right after payment. So every report is a confirmed email lead. Use "check your inbox" in copy, not "download".
 
 | | Free teardown | Full plan |
 |---|---|---|
@@ -230,7 +230,9 @@ Add these to the site address:
 | Intent | `cta_click` | Clicked a button (records which one) |
 | Started | `report_started` | Submitted a competitor URL |
 | **Got value** | **`report_completed`** | **Received a teardown. This is our main success metric.** |
-| Used it | `pdf_download`, `html_view` | Downloaded or viewed the report |
+| Asked | `report_requested`, `confirm_email_sent` | Submitted the form; confirmation email sent |
+| Confirmed | `email_confirmed` | Clicked the link; the report is being emailed |
+| Used it | `pdf_download`, `html_view` | Downloaded or viewed the report (only before email-only delivery was switched on) |
 | Upgrade | `upgrade_click`, `checkout_started`, `payment_success` | Moved toward and through payment |
 
 Every event is tagged with the visitor's versions (`exp_pos`, `exp_hook`) and their `utm_source` / `utm_campaign`. **[dev]** Analytics needs the free PostHog key set in Vercel; see `docs/LAUNCH.md`.
