@@ -1,6 +1,6 @@
-import { Circle, Document, Font, Page, Path, StyleSheet, Svg, Text, View, renderToBuffer } from "@react-pdf/renderer";
-import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
-import type { CompetitorTeardown, ProPlan, Report } from "./types";
+import { Circle, Document, Font, Link, Page, Path, StyleSheet, Svg, Text, View, renderToBuffer } from "@react-pdf/renderer";
+import type { ReactNode } from "react";
+import type { CompareRow, CompetitorTeardown, ProPlan, Report } from "./types";
 
 // Built-in Helvetica only (no network font fetch). It covers WinAnsi, so anything
 // outside Latin-1 plus common punctuation is transliterated or dropped.
@@ -51,13 +51,13 @@ const s = StyleSheet.create({
     borderColor: C.ink,
     borderRadius: 6,
     padding: 11,
-    marginBottom: 9,
+    marginTop: 9,
     backgroundColor: "#ffffff",
   },
-  callout: { backgroundColor: C.soft, borderLeftWidth: 4, borderLeftColor: C.brand, borderRadius: 4, padding: 13, marginBottom: 10, fontSize: 10.5, lineHeight: 1.55 },
+  callout: { backgroundColor: C.soft, borderLeftWidth: 4, borderLeftColor: C.brand, borderRadius: 4, padding: 13, marginTop: 2, fontSize: 10.5, lineHeight: 1.55 },
   row: { flexDirection: "row", borderBottomWidth: 0.8, borderBottomColor: C.line, paddingVertical: 5, paddingHorizontal: 5 },
   th: { flexDirection: "row", backgroundColor: C.ink, color: "#ffffff", paddingVertical: 5, paddingHorizontal: 5, fontFamily: "Helvetica-Bold", fontSize: 8, borderRadius: 3 },
-  bullet: { flexDirection: "row", marginBottom: 4 },
+  bullet: { flexDirection: "row", marginTop: 4 },
   bulletMark: { width: 4.5, height: 4.5, backgroundColor: C.brand, marginTop: 4.2, marginRight: 7 },
   kv: { flexDirection: "row", marginBottom: 5 },
   k: { width: 112, fontFamily: "Helvetica-Bold", color: C.muted, fontSize: 7.5, letterSpacing: 0.6, paddingTop: 1.2 },
@@ -113,30 +113,24 @@ const SubHead = ({ children }: { children: string }) => (
   </Text>
 );
 
-function Table({ cols, rows, heading }: { cols: { label: string; w: number }[]; rows: string[][]; heading?: ReactNode }) {
-  const Row = ({ r, ri }: { r: string[]; ri: number }) => (
-    <View style={[s.row, ri % 2 ? { backgroundColor: C.paper } : {}]} wrap={false}>
-      {r.map((cell, ci) => (
-        <Text key={ci} style={{ flex: cols[ci].w, paddingRight: 6, fontSize: 8.5, fontFamily: ci === 0 ? "Helvetica-Bold" : "Helvetica" }}>
-          {t(cell)}
-        </Text>
-      ))}
-    </View>
-  );
+function Table({ cols, rows }: { cols: { label: string; w: number }[]; rows: string[][] }) {
+  // Kept deliberately simple: grouping the header with a section heading or
+  // the first row (nested unbreakable blocks) makes react-pdf overlap rows.
   return (
-    <View style={{ marginBottom: 10 }}>
-      {/* Header and first row stay together so a header never ends a page alone. */}
-      <View wrap={false}>
-        {heading}
-        <View style={s.th}>
-          {cols.map((c, i) => (
-            <Text key={i} style={{ flex: c.w, paddingRight: 6 }}>{t(c.label)}</Text>
+    <View>
+      <View style={s.th} wrap={false} minPresenceAhead={30}>
+        {cols.map((c, i) => (
+          <Text key={i} style={{ flex: c.w, paddingRight: 6 }}>{t(c.label)}</Text>
+        ))}
+      </View>
+      {rows.map((r, ri) => (
+        <View key={ri} style={[s.row, ri % 2 ? { backgroundColor: C.paper } : {}]} wrap={false}>
+          {r.map((cell, ci) => (
+            <Text key={ci} style={{ flex: cols[ci].w, paddingRight: 6, fontSize: 8.5, fontFamily: ci === 0 ? "Helvetica-Bold" : "Helvetica" }}>
+              {t(cell)}
+            </Text>
           ))}
         </View>
-        {rows[0] ? <Row r={rows[0]} ri={0} /> : null}
-      </View>
-      {rows.slice(1).map((r, i) => (
-        <Row key={i + 1} r={r} ri={i + 1} />
       ))}
     </View>
   );
@@ -161,13 +155,31 @@ function Footer({ label }: { label: string }) {
   );
 }
 
+// Table of contents: every Section registers itself and anchors its heading
+// with an id. After a first render we read each anchor's page from the PDF's
+// named destinations, then render again with real page numbers and links.
+// (A render-prop Text would also report pages, but it upsets layout.)
+interface TocEntry {
+  id: string;
+  num: string;
+  name: string;
+  part: string;
+}
+interface TocCollector {
+  entries: TocEntry[];
+  pages: Record<string, number>;
+}
+const slug = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
 /** "3. Audience" renders as an orange "03" tag plus a serif heading with a yellow underline. */
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children, toc, part }: { title: string; children: ReactNode; toc?: TocCollector | null; part?: string }) {
   const m = title.match(/^([0-9A-Z]{1,2})\.\s+(.*)$/);
   const num = m ? (/^\d+$/.test(m[1]) ? m[1].padStart(2, "0") : m[1]) : "";
   const name = m ? m[2] : title;
+  const id = `s-${slug(`${part ?? ""}-${num}-${name}`)}`;
+  if (toc && part && !toc.entries.some((e) => e.id === id)) toc.entries.push({ id, num, name, part });
   const heading = (
-    <View>
+    <View id={id}>
       <View style={{ flexDirection: "row", alignItems: "flex-end", marginBottom: 2 }}>
         {num ? (
           <Text style={{ fontFamily: "Helvetica-Bold", fontSize: 8, color: "#ffffff", backgroundColor: C.brand, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3, marginRight: 8, marginBottom: 3 }}>
@@ -179,36 +191,25 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <View style={{ width: 46, height: 4, backgroundColor: C.yellow, marginBottom: 10 }} />
     </View>
   );
-  const kids = Children.toArray(children);
-  // A section that opens with a table carries its heading inside the table's
-  // keep-together block, so the heading never ends a page on its own.
-  if (isValidElement(kids[0]) && kids[0].type === Table) {
-    return (
-      <View style={{ marginBottom: 16 }}>
-        {cloneElement(kids[0] as ReactElement<{ heading?: ReactNode }>, { heading })}
-        {kids.slice(1)}
-      </View>
-    );
-  }
   return (
-    <View style={{ marginBottom: 16 }}>
+    <View style={{ marginTop: 14 }}>
       <View wrap={false} minPresenceAhead={120}>
         {heading}
       </View>
-      {kids}
+      {children}
     </View>
   );
 }
 
-function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string }) {
+function TeardownPages({ d, footer, toc }: { d: CompetitorTeardown; footer: string; toc: TocCollector | null }) {
   return (
     <>
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="1. Executive summary">
+        <Section toc={toc} part="Competitor teardown" title="1. Executive summary">
           <View style={s.callout}><Text>{t(d.summary)}</Text></View>
         </Section>
-        <Section title="2. Positioning">
+        <Section toc={toc} part="Competitor teardown" title="2. Positioning">
           <KV k="One-liner" v={d.positioning.oneLiner} />
           <KV k="Target audience" v={d.positioning.targetAudience} />
           <KV k="Awareness stage" v={d.positioning.awarenessStage} />
@@ -216,7 +217,7 @@ function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string })
           <KV k="Core offer" v={d.positioning.coreOffer} />
           <KV k="Primary CTA" v={d.positioning.primaryCta} />
         </Section>
-        <Section title="3. Audience">
+        <Section toc={toc} part="Competitor teardown" title="3. Audience">
           <SubHead>Segments</SubHead>
           <Bullets items={d.audience.segments} />
           <SubHead>Pains they address</SubHead>
@@ -227,7 +228,7 @@ function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string })
       </Page>
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="4. Channel map">
+        <Section toc={toc} part="Competitor teardown" title="4. Channel map">
           {d.channels.map((c, i) => (
             <View key={i} style={s.card} wrap={false}>
               <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
@@ -239,7 +240,7 @@ function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string })
             </View>
           ))}
         </Section>
-        <Section title="5. Content engine">
+        <Section toc={toc} part="Competitor teardown" title="5. Content engine">
           <KV k="Cadence" v={d.content.cadence} />
           <KV k="CTA pattern" v={d.content.ctaPattern} />
           <KV k="Hook style" v={d.content.hookStyle} />
@@ -248,7 +249,7 @@ function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string })
           <SubHead>Formats</SubHead>
           <Bullets items={d.content.formats} />
         </Section>
-        <Section title="6. SEO footprint">
+        <Section toc={toc} part="Competitor teardown" title="6. SEO footprint">
           <SubHead>Page types</SubHead>
           <Bullets items={d.seo.pageTypes} />
           <SubHead>Programmatic patterns</SubHead>
@@ -261,7 +262,7 @@ function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string })
       </Page>
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="7. Funnel and offer">
+        <Section toc={toc} part="Competitor teardown" title="7. Funnel and offer">
           <KV k="Entry offer" v={d.funnel.entryOffer} />
           <KV k="Core offer" v={d.funnel.coreOffer} />
           <KV k="Pricing model" v={d.funnel.pricingModel} />
@@ -273,16 +274,16 @@ function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string })
           <SubHead>Tech stack detected</SubHead>
           <Text>{t(d.techStack.join(", ") || "None detected")}</Text>
         </Section>
-        <Section title="8. What works for them, and whether it transfers">
+        <Section toc={toc} part="Competitor teardown" title="8. What works for them, and whether it transfers">
           <Table
             cols={[{ label: "Tactic (mechanism)", w: 3 }, { label: "Evidence", w: 3 }, { label: "Why it works", w: 3 }, { label: "Transfer", w: 1.2 }, { label: "Cost to copy", w: 1.6 }]}
             rows={d.whatWorks.map((w) => [w.tactic, w.evidence, w.whyItWorks, w.transferable, w.costToCopy])}
           />
         </Section>
-        <Section title="9. Gaps: their blind spots">
+        <Section toc={toc} part="Competitor teardown" title="9. Gaps: their blind spots">
           <Bullets items={d.gaps} />
         </Section>
-        <Section title="10. Quick wins for a smaller rival">
+        <Section toc={toc} part="Competitor teardown" title="10. Quick wins for a smaller rival">
           <Bullets items={d.quickWins} />
         </Section>
       </Page>
@@ -290,7 +291,42 @@ function TeardownPages({ d, footer }: { d: CompetitorTeardown; footer: string })
   );
 }
 
-function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: string }) {
+const STATUS = { ahead: { label: "AHEAD", color: C.ok }, even: { label: "EVEN", color: C.blue }, behind: { label: "BEHIND", color: C.bad } } as const;
+
+function CompareTable({ rows, brand, comp }: { rows: CompareRow[]; brand: string; comp: string }) {
+  const cols = [
+    { label: "Area", w: 2 },
+    { label: short(brand, 18), w: 2.2 },
+    { label: short(comp, 18), w: 2.2 },
+    { label: "", w: 0.9 },
+    { label: "What to do", w: 3.2 },
+  ];
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <View style={s.th} wrap={false}>
+        {cols.map((c, i) => (
+          <Text key={i} style={{ flex: c.w, paddingRight: 6 }}>{t(c.label)}</Text>
+        ))}
+      </View>
+      {rows.map((r, i) => (
+        <View key={i} style={[s.row, i % 2 ? { backgroundColor: C.paper } : {}]} wrap={false}>
+          <Text style={{ flex: 2, paddingRight: 6, fontSize: 8.5, fontFamily: "Helvetica-Bold" }}>{t(r.area)}</Text>
+          <Text style={{ flex: 2.2, paddingRight: 6, fontSize: 8.5 }}>{t(r.you)}</Text>
+          <Text style={{ flex: 2.2, paddingRight: 6, fontSize: 8.5 }}>{t(r.them)}</Text>
+          <View style={{ flex: 0.9, paddingRight: 6 }}>
+            <Text style={[s.pill, { backgroundColor: STATUS[r.status].color }]}>{STATUS[r.status].label}</Text>
+          </View>
+          <Text style={{ flex: 3.2, fontSize: 8.5 }}>{t(r.action)}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function PlanPages({ p, comp, footer, toc }: { p: ProPlan; comp: string; footer: string; toc: TocCollector | null }) {
+  // Letters are assigned in order, so stage-specific sections slot in cleanly.
+  let n = 0;
+  const L = (title: string) => `${String.fromCharCode(65 + n++)}. ${title}`;
   return (
     <>
       <Page size="A4" style={s.page}>
@@ -300,10 +336,27 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
           <Text style={[s.h1, { color: "#ffffff", fontSize: 24, marginBottom: 4 }]}>{t(`${p.brandName}: your marketing plan`)}</Text>
           <Text style={{ color: "#d9d3c7" }}>{t(`Built from what already works for ${comp}. Study it, then build yours.`)}</Text>
         </View>
-        <Section title="A. Executive summary">
+        <Section toc={toc} part="Your plan" title={L("Executive summary")}>
           <View style={s.callout}><Text>{t(p.executiveSummary)}</Text></View>
         </Section>
-        <Section title="B. Positioning">
+        {p.currentState ? (
+          <Section toc={toc} part="Your plan" title={L("Where you stand today")}>
+            <View style={s.callout}><Text>{t(p.currentState.summary)}</Text></View>
+            <SubHead>Fix these first</SubHead>
+            <Bullets items={p.currentState.priorities} />
+            {p.currentState.strengths.length ? <SubHead>Already working for you</SubHead> : null}
+            {p.currentState.strengths.length ? <Bullets items={p.currentState.strengths} /> : null}
+          </Section>
+        ) : null}
+        {p.launchKit ? (
+          <Section toc={toc} part="Your plan" title={L("Launch kit")}>
+            {p.launchKit.nameIdeas.length ? <SubHead>Brand name ideas</SubHead> : null}
+            {p.launchKit.nameIdeas.length ? <Bullets items={p.launchKit.nameIdeas} /> : null}
+            <SubHead>Website pages to build first</SubHead>
+            <Bullets items={p.launchKit.websitePages.map((w) => `${w.page}: ${w.purpose}`)} />
+          </Section>
+        ) : null}
+        <Section toc={toc} part="Your plan" title={L("Positioning")}>
           <View style={s.card}><Text style={{ fontFamily: SERIF, fontSize: 13, lineHeight: 1.3 }}>{t(p.positioning.statement)}</Text></View>
           <SubHead>Differentiators</SubHead>
           <Bullets items={p.positioning.differentiators} />
@@ -312,7 +365,7 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
           <SubHead>Tagline options</SubHead>
           <Bullets items={p.positioning.taglines} />
         </Section>
-        <Section title="C. Ideal customer">
+        <Section toc={toc} part="Your plan" title={L("Ideal customer")}>
           <KV k="Primary" v={p.icp.primary} />
           <KV k="Secondary" v={p.icp.secondary} />
           <SubHead>Pains</SubHead>
@@ -323,9 +376,36 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
           <Bullets items={p.icp.whereTheyGather} />
         </Section>
       </Page>
+      {p.currentState?.compare.length ? (
+        <Page size="A4" style={s.page}>
+          <Footer label={footer} />
+          <Section toc={toc} part="Your plan" title={L("You vs them, side by side")}>
+            <Text style={[s.small, { marginBottom: 8 }]}>
+              {t(`Observed on both public sites on ${p.domain || "your site"} and ${comp}. Ahead / even / behind is a simple comparison of what each site shows, not a judgement of quality.`)}
+            </Text>
+            <CompareTable rows={p.currentState.compare} brand={p.brandName} comp={comp} />
+          </Section>
+        </Page>
+      ) : null}
+      {p.launchKit ? (
+        <Page size="A4" style={s.page}>
+          <Footer label={footer} />
+          <Section toc={toc} part="Your plan" title={L("Homepage outline")}>
+            {p.launchKit.homepageOutline.map((x, i) => (
+              <View key={i} style={s.bullet} wrap={false}>
+                <Text style={{ width: 18, fontFamily: "Helvetica-Bold", color: C.brand }}>{i + 1}.</Text>
+                <Text style={{ flex: 1 }}>{t(x)}</Text>
+              </View>
+            ))}
+          </Section>
+          <Section toc={toc} part="Your plan" title={L("Launch checklist")}>
+            <Table cols={[{ label: "Task", w: 3 }, { label: "Why", w: 3 }]} rows={p.launchKit.launchChecklist.map((c) => [c.task, c.why])} />
+          </Section>
+        </Page>
+      ) : null}
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="D. Strategies">
+        <Section toc={toc} part="Your plan" title={L("Strategies")}>
           {p.strategies.map((x, i) => (
             <View key={i} style={s.card} wrap={false}>
               <Text style={s.cardTitle}>{t(`${i + 1}. ${x.name}`)}</Text>
@@ -336,7 +416,10 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
             </View>
           ))}
         </Section>
-        <Section title="E. Channel plan">
+        </Page>
+      <Page size="A4" style={s.page}>
+        <Footer label={footer} />
+        <Section toc={toc} part="Your plan" title={L("Channel plan")}>
           <Table
             cols={[{ label: "Channel", w: 1.6 }, { label: "Pri", w: 0.6 }, { label: "Goal", w: 2.2 }, { label: "Tactics", w: 3.4 }, { label: "KPI", w: 1.6 }, { label: "Effort", w: 1.3 }]}
             rows={p.channelPlan.map((c) => [c.channel, c.priority, c.goal, c.tactics.join("; "), c.kpi, c.effort])}
@@ -345,7 +428,7 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
       </Page>
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="F. 30 / 60 / 90 day execution plan">
+        <Section toc={toc} part="Your plan" title={L("30 / 60 / 90 day execution plan")}>
           {p.executionPlan.map((ph, i) => (
             <View key={i} style={{ marginBottom: 8 }}>
               <SubHead>{`${ph.phase}: ${ph.focus}`}</SubHead>
@@ -359,7 +442,7 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
       </Page>
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="G. Content plan">
+        <Section toc={toc} part="Your plan" title={L("Content plan")}>
           {p.contentPlan.pillars.map((pl, i) => (
             <View key={i} style={s.card} wrap={false}>
               <Text style={s.cardTitle}>{t(pl.name)}</Text>
@@ -380,24 +463,24 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
       </Page>
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="H. SEO plan">
+        <Section toc={toc} part="Your plan" title={L("SEO plan")}>
           <Table cols={[{ label: "Keyword", w: 3 }, { label: "Intent", w: 1.5 }, { label: "Page type", w: 2 }]} rows={p.seoPlan.keywords.map((k) => [k.keyword, k.intent, k.pageType])} />
           <SubHead>Page types to build</SubHead>
           <Bullets items={p.seoPlan.pageTypesToBuild} />
           <KV k="Programmatic idea" v={p.seoPlan.programmaticIdea} />
         </Section>
-        <Section title="I. Paid ads plan">
+        <Section toc={toc} part="Your plan" title={L("Paid ads plan")}>
           <Table cols={[{ label: "Angle", w: 1.4 }, { label: "Hook", w: 3.2 }, { label: "Offer", w: 1.8 }, { label: "Format", w: 1.3 }]} rows={p.adsPlan.angles.map((a) => [a.angle, a.hook, a.offer, a.format])} />
           <KV k="Budget guidance" v={p.adsPlan.budgetGuidance} />
         </Section>
-        <Section title="J. Email plan">
+        <Section toc={toc} part="Your plan" title={L("Email plan")}>
           <KV k="Lead magnet" v={p.emailPlan.leadMagnet} />
           <Table cols={[{ label: "Day", w: 0.6 }, { label: "Subject", w: 3.5 }, { label: "Goal", w: 2.5 }]} rows={p.emailPlan.sequence.map((e) => [String(e.day), e.subject, e.goal])} />
         </Section>
       </Page>
       <Page size="A4" style={s.page}>
         <Footer label={footer} />
-        <Section title="K. Swipe file (mechanisms, not material)">
+        <Section toc={toc} part="Your plan" title={L("Swipe file (mechanisms, not material)")}>
           {p.swipeFile.map((w, i) => (
             <View key={i} style={s.card} wrap={false}>
               <Text style={s.cardTitle}>{t(w.mechanism)}</Text>
@@ -407,13 +490,13 @@ function PlanPages({ p, comp, footer }: { p: ProPlan; comp: string; footer: stri
             </View>
           ))}
         </Section>
-        <Section title="L. Gaps to exploit">
+        <Section toc={toc} part="Your plan" title={L("Gaps to exploit")}>
           <Bullets items={p.gapsToExploit} />
         </Section>
-        <Section title="M. KPIs">
+        <Section toc={toc} part="Your plan" title={L("KPIs")}>
           <Table cols={[{ label: "Metric", w: 3 }, { label: "Day 30", w: 2 }, { label: "Day 90", w: 2 }]} rows={p.kpis.map((k) => [k.metric, k.target30, k.target90])} />
         </Section>
-        <Section title="N. Risks and honest caveats">
+        <Section toc={toc} part="Your plan" title={L("Risks and honest caveats")}>
           <Bullets items={p.risks} />
         </Section>
       </Page>
@@ -504,7 +587,7 @@ function Cover({ r, date }: { r: Report; date: string }) {
 
       <View style={[s.card, { marginTop: 30, backgroundColor: C.surface, padding: 14 }]}>
         <KV k="Competitor" v={d.url} />
-        {r.plan ? <KV k="Your brand" v={`${r.plan.brandName} (${r.plan.domain})`} /> : null}
+        {r.plan ? <KV k="Your brand" v={r.plan.domain ? `${r.plan.brandName} (${r.plan.domain})` : `${r.plan.brandName} (fresh start, no website yet)`} /> : null}
         <KV k="Generated" v={date} />
         <KV k="Analysis engine" v={d.engine} />
       </View>
@@ -519,18 +602,72 @@ function Cover({ r, date }: { r: Report; date: string }) {
   );
 }
 
+/** Maps each named destination (section id) to its 1-based page number. */
+export function destinationPages(pdf: Buffer): Record<string, number> {
+  const src = pdf.toString("latin1");
+  const kids = src.match(/\/Type \/Pages[\s\S]*?\/Kids \[([^\]]*)\]/)?.[1] ?? "";
+  const order = [...kids.matchAll(/(\d+) 0 R/g)].map((m) => m[1]);
+  const pages: Record<string, number> = {};
+  for (const m of src.matchAll(/\((s-[a-z0-9-]+)\) \[(\d+) 0 R \/XYZ/g)) {
+    const idx = order.indexOf(m[2]);
+    if (idx >= 0) pages[m[1]] = idx + 1;
+  }
+  return pages;
+}
+
+/** Contents page. Every row links to its section; page numbers come from the first render pass. */
+function TocPage({ toc, footer }: { toc: TocCollector | null; footer: string }) {
+  const entries = toc?.entries ?? [];
+  const parts = [...new Set(entries.map((e) => e.part))];
+  return (
+    <Page size="A4" style={s.page}>
+      <Footer label={footer} />
+      <Text style={s.kicker}>CONTENTS</Text>
+      <Text style={[s.h1, { fontSize: 24, marginBottom: 2 }]}>What&apos;s inside</Text>
+      <Text style={[s.small, { marginBottom: 8 }]}>Click any line to jump to that section.</Text>
+      {parts.map((part) => (
+        <View key={part} style={{ marginBottom: 8 }}>
+          <Text style={[s.h3, { color: C.brand, marginTop: 2, marginBottom: 3 }]}>{t(part).toUpperCase()}</Text>
+          {entries
+            .filter((e) => e.part === part)
+            .map((e) => (
+              <Link key={e.id} src={`#${e.id}`} style={{ textDecoration: "none", color: C.ink }}>
+                <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 2.6, borderBottomWidth: 0.6, borderBottomColor: C.line }}>
+                  <Text style={{ width: 24, fontFamily: "Helvetica-Bold", fontSize: 8, color: C.brand }}>{e.num}</Text>
+                  <Text style={{ flex: 1, fontSize: 9.5 }}>{t(e.name)}</Text>
+                  <Text style={{ width: 34, textAlign: "right", fontFamily: "Helvetica-Bold", fontSize: 9.5 }}>{toc?.pages[e.id] ?? ""}</Text>
+                </View>
+              </Link>
+            ))}
+        </View>
+      ))}
+    </Page>
+  );
+}
+
 async function renderDesignedPdf(r: Report, appUrl: string): Promise<Buffer> {
   const d = r.teardown;
   const date = d.generatedAt.slice(0, 10);
   const footer = `${d.competitor} · ${date}`;
-  const doc = (
-    <Document title={`${d.competitor} marketing teardown`} author="Marketing Scholars" subject="Reverse-engineered marketing strategy">
-      <Cover r={r} date={date} />
-      <TeardownPages d={d} footer={footer} />
-      {r.plan ? <PlanPages p={r.plan} comp={d.competitor} footer={footer} /> : <UpgradePage footer={footer} url={appUrl} />}
-    </Document>
+  const doc = (collector: TocCollector, toc: TocCollector | null) => (
+      <Document title={`${d.competitor} marketing teardown`} author="Marketing Scholars" subject="Reverse-engineered marketing strategy">
+        <Cover r={r} date={date} />
+        <TocPage toc={toc} footer={footer} />
+        <TeardownPages d={d} footer={footer} toc={collector} />
+        {r.plan ? <PlanPages p={r.plan} comp={d.competitor} footer={footer} toc={collector} /> : <UpgradePage footer={footer} url={appUrl} />}
+      </Document>
   );
-  return renderToBuffer(doc);
+  // Pass 1 learns which page each section starts on. The contents page is a
+  // single page either way, so filling it in does not move anything.
+  const first: TocCollector = { entries: [], pages: {} };
+  first.pages = destinationPages(await renderToBuffer(doc(first, null)));
+  const second: TocCollector = { entries: [], pages: {} };
+  const out = await renderToBuffer(doc(second, first));
+  // If the filled-in contents page shifted anything (it ran onto a second
+  // page), render once more with the corrected numbers.
+  second.pages = destinationPages(out);
+  const shifted = first.entries.some((e) => second.pages[e.id] !== first.pages[e.id]);
+  return shifted ? renderToBuffer(doc({ entries: [], pages: {} }, second)) : out;
 }
 
 /** Every section as a plain heading plus lines, for the fallback layout. */

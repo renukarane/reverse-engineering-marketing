@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { brandNotes, validateBrand } from "./brandInput";
+import type { BrandInput } from "./prompts";
 
 // One-time Razorpay payment per full report, UPI only, in INR. No database:
 // the report inputs ride in the Razorpay Order's notes, and the server re-reads
@@ -7,13 +9,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type ProGate = "free" | "razorpay" | "code";
 
-export interface ProInputs {
+export interface ProInputs extends BrandInput {
   competitorUrl: string;
-  brandName: string;
-  domain: string;
-  niche?: string;
-  audience?: string;
-  goal?: string;
 }
 
 export interface PaidOrder {
@@ -107,7 +104,8 @@ const notesOf = (n: RzpOrder["notes"]): Record<string, string> => (Array.isArray
 export async function createOrder(inputs: ProInputs, email?: string) {
   // Razorpay allows 15 notes of up to 256 characters each.
   const notes: Record<string, string> = {};
-  for (const [k, v] of Object.entries({ ...inputs, email })) if (v) notes[k] = String(v).slice(0, 250);
+  const { competitorUrl, ...brand } = inputs;
+  Object.assign(notes, brandNotes(brand as BrandInput), { competitorUrl: competitorUrl.slice(0, 250) }, email ? { email: email.slice(0, 250) } : {});
   const order = await rzp<RzpOrder>("POST", "/orders", {
     amount: pricePaise(),
     currency: "INR",
@@ -161,9 +159,10 @@ export async function paidOrder(orderId: string, paymentId: string): Promise<Pai
     const order = await rzp<RzpOrder>("GET", `/orders/${orderId}`);
     if (Date.now() / 1000 - order.created_at > ORDER_VALID_DAYS * 86400) return null;
     const n = notesOf(order.notes);
-    if (!n.competitorUrl || !n.brandName || !n.domain) return null;
+    const v = validateBrand(n);
+    if (!n.competitorUrl || "error" in v) return null;
     return {
-      inputs: { competitorUrl: n.competitorUrl, brandName: n.brandName, domain: n.domain, niche: n.niche, audience: n.audience, goal: n.goal },
+      inputs: { competitorUrl: n.competitorUrl, ...v.brand },
       email: n.email || payment.email || null,
       orderId,
       paymentId,

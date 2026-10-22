@@ -62,7 +62,7 @@ test("normalizers coerce messy model output and strip em dashes", () => {
   assert.equal(t.whatWorks[0].transferable, "modified");
   assert.deepEqual(t.gaps, ["one gap"]);
   assert.deepEqual(t.audience.segments, []);
-  const p = normalizePlan({ channelPlan: [{ channel: "SEO", priority: "p1" }], contentPlan: { calendar: [{ title: "A" }, { title: "B", week: "7" }] } }, { brandName: "B", domain: "d" });
+  const p = normalizePlan({ channelPlan: [{ channel: "SEO", priority: "p1" }], contentPlan: { calendar: [{ title: "A" }, { title: "B", week: "7" }] } }, { brandName: "B", domain: "d", stage: "existing" });
   assert.equal(p.channelPlan[0].priority, "P1");
   assert.deepEqual(p.contentPlan.calendar.map((c) => c.week), [1, 7]);
 });

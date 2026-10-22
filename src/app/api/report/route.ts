@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     engine: String(td.engine ?? "").slice(0, 80),
   });
   const plan = body.tier === "pro" && body.plan
-    ? normalizePlan(body.plan, { brandName: String(body.plan.brandName ?? "").slice(0, 80), domain: String(body.plan.domain ?? "").slice(0, 200) })
+    ? normalizePlan(body.plan, { brandName: String(body.plan.brandName ?? "").slice(0, 80), domain: String(body.plan.domain ?? "").slice(0, 200), stage: body.plan.stage === "new" ? "new" : "existing" })
     : undefined;
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;

@@ -91,7 +91,7 @@ export function normalizeTeardown(raw: unknown, base: Pick<CompetitorTeardown, "
   };
 }
 
-export function normalizePlan(raw: unknown, base: Pick<ProPlan, "brandName" | "domain">): ProPlan {
+export function normalizePlan(raw: unknown, base: Pick<ProPlan, "brandName" | "domain" | "stage">): ProPlan {
   const r = obj(raw);
   const p = obj(r.positioning);
   const i = obj(r.icp);
@@ -99,8 +99,35 @@ export function normalizePlan(raw: unknown, base: Pick<ProPlan, "brandName" | "d
   const seo = obj(r.seoPlan);
   const ads = obj(r.adsPlan);
   const em = obj(r.emailPlan);
+  const cs = obj(r.currentState);
+  const lk = obj(r.launchKit);
+  const currentState =
+    base.stage === "existing" && (str(cs.summary) || strs(cs.priorities).length)
+      ? {
+          summary: str(cs.summary, 1500),
+          strengths: strs(cs.strengths, 8),
+          priorities: strs(cs.priorities, 8),
+          compare: arr(cs.compare, (o) =>
+            str(o.area)
+              ? { area: str(o.area, 80), you: str(o.you, 200), them: str(o.them, 200), status: oneOf(o.status, ["ahead", "even", "behind"] as const, "even"), action: str(o.action, 300) }
+              : null,
+            20,
+          ),
+        }
+      : undefined;
+  const launchKit =
+    base.stage === "new" && (arr(lk.websitePages, () => 1).length || arr(lk.launchChecklist, () => 1).length)
+      ? {
+          nameIdeas: strs(lk.nameIdeas, 8),
+          websitePages: arr(lk.websitePages, (o) => (str(o.page) ? { page: str(o.page, 80), purpose: str(o.purpose, 300) } : null), 10),
+          homepageOutline: strs(lk.homepageOutline, 14),
+          launchChecklist: arr(lk.launchChecklist, (o) => (str(o.task) ? { task: str(o.task, 200), why: str(o.why, 300) } : null), 20),
+        }
+      : undefined;
   return {
     ...base,
+    ...(currentState ? { currentState } : {}),
+    ...(launchKit ? { launchKit } : {}),
     executiveSummary: str(r.executiveSummary, 2500),
     positioning: { statement: str(p.statement, 600), differentiators: strs(p.differentiators), messagingPillars: strs(p.messagingPillars), taglines: strs(p.taglines, 6) },
     icp: { primary: str(i.primary, 500), secondary: str(i.secondary, 500), pains: strs(i.pains), triggers: strs(i.triggers), whereTheyGather: strs(i.whereTheyGather) },

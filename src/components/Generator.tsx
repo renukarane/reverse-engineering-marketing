@@ -38,7 +38,8 @@ export interface GeneratorCopy {
 
 export default function Generator({ copy }: { copy: GeneratorCopy }) {
   const [tier, setTier] = useState<Tier>("free");
-  const [form, setForm] = useState({ competitorUrl: "", brandName: "", domain: "", niche: "", audience: "", goal: "", accessCode: "", email: "" });
+  const [form, setForm] = useState({ competitorUrl: "", stage: "existing", brandName: "", domain: "", niche: "", audience: "", location: "", budget: "", goal: "", accessCode: "", email: "" });
+  const fresh = form.stage === "new";
   const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "razorpay" | "code"; price: string; aiEnabled: boolean; emailEnabled: boolean } | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [notice, setNotice] = useState("");
@@ -70,7 +71,7 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
     return () => clearInterval(id);
   }, [loading, steps.length, tier]);
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
 
   const needsCheckout = tier === "pro" && cfg?.proGate === "razorpay" && !(showCode && form.accessCode);
 
@@ -243,24 +244,65 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
 
         {tier === "pro" && (
           <>
-            <div className="grid2">
-              <div>
-                <label htmlFor="brandName">Your brand name</label>
-                <input id="brandName" required placeholder="Acme" value={form.brandName} onChange={set("brandName")} />
-              </div>
-              <div>
-                <label htmlFor="domain">Your domain</label>
-                <input id="domain" required placeholder="acme.com" value={form.domain} onChange={set("domain")} inputMode="url" />
-              </div>
-              <div>
-                <label htmlFor="niche">What you sell <span className="opt">(optional)</span></label>
-                <input id="niche" placeholder="Email marketing software for creators" value={form.niche} onChange={set("niche")} />
-              </div>
-              <div>
-                <label htmlFor="audience">Who you sell to <span className="opt">(optional)</span></label>
-                <input id="audience" placeholder="D2C founders in India" value={form.audience} onChange={set("audience")} />
-              </div>
+            <div className="stage" role="radiogroup" aria-label="Where are you starting from?">
+              <button type="button" role="radio" aria-checked={!fresh} className="stage-opt" onClick={() => setForm({ ...form, stage: "existing" })}>
+                <b>I have a website</b>
+                <small>We compare your site with theirs and plan how to close the gaps</small>
+              </button>
+              <button type="button" role="radio" aria-checked={fresh} className="stage-opt" onClick={() => setForm({ ...form, stage: "new" })}>
+                <b>Starting fresh</b>
+                <small>No website or brand yet: get a launch kit and a plan from zero</small>
+              </button>
             </div>
+            {fresh ? (
+              <div className="grid2">
+                <div>
+                  <label htmlFor="niche">What will you sell?</label>
+                  <input id="niche" required placeholder="Handmade skincare for sensitive skin" value={form.niche} onChange={set("niche")} />
+                </div>
+                <div>
+                  <label htmlFor="audience">Who will you sell to?</label>
+                  <input id="audience" required placeholder="Working women, 25–40, in metro cities" value={form.audience} onChange={set("audience")} />
+                </div>
+                <div>
+                  <label htmlFor="brandName">Brand name <span className="opt">(optional, we&apos;ll suggest some)</span></label>
+                  <input id="brandName" placeholder="Leave blank if undecided" value={form.brandName} onChange={set("brandName")} />
+                </div>
+                <div>
+                  <label htmlFor="location">City or market <span className="opt">(optional)</span></label>
+                  <input id="location" placeholder="Pune, or all of India" value={form.location} onChange={set("location")} />
+                </div>
+                <div>
+                  <label htmlFor="budget">Monthly marketing budget <span className="opt">(optional)</span></label>
+                  <select id="budget" value={form.budget} onChange={set("budget")}>
+                    <option value="">Not sure yet</option>
+                    <option>Under ₹10,000</option>
+                    <option>₹10,000–50,000</option>
+                    <option>₹50,000–2,00,000</option>
+                    <option>Above ₹2,00,000</option>
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="grid2">
+                <div>
+                  <label htmlFor="brandName">Your brand name</label>
+                  <input id="brandName" required placeholder="Acme" value={form.brandName} onChange={set("brandName")} />
+                </div>
+                <div>
+                  <label htmlFor="domain">Your website</label>
+                  <input id="domain" required placeholder="acme.com" value={form.domain} onChange={set("domain")} inputMode="url" />
+                </div>
+                <div>
+                  <label htmlFor="niche">What you sell <span className="opt">(optional)</span></label>
+                  <input id="niche" placeholder="Email marketing software for creators" value={form.niche} onChange={set("niche")} />
+                </div>
+                <div>
+                  <label htmlFor="audience">Who you sell to <span className="opt">(optional)</span></label>
+                  <input id="audience" placeholder="D2C founders in India" value={form.audience} onChange={set("audience")} />
+                </div>
+              </div>
+            )}
             <label htmlFor="goal">Main goal for the next 90 days <span className="opt">(optional)</span></label>
             <input id="goal" placeholder="Get 200 paying customers a month" value={form.goal} onChange={set("goal")} />
             {(cfg?.emailEnabled || cfg?.proGate === "razorpay") && (
@@ -357,11 +399,27 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
 
           {report.plan && (
             <>
+              {report.plan.currentState && (
+                <>
+                  <h3>Where you stand today</h3>
+                  <p className="note" style={{ marginTop: 0 }}>
+                    Behind on {report.plan.currentState.compare.filter((r) => r.status === "behind").length} of {report.plan.currentState.compare.length} areas we can see on both sites.
+                  </p>
+                  <ul>{report.plan.currentState.priorities.slice(0, 3).map((x) => <li key={x}>{x}</li>)}</ul>
+                </>
+              )}
+              {report.plan.launchKit && (
+                <>
+                  <h3>Your launch kit</h3>
+                  {report.plan.launchKit.nameIdeas.length > 0 && <p className="note" style={{ marginTop: 0 }}>Name ideas: {report.plan.launchKit.nameIdeas.slice(0, 4).join(" · ")}</p>}
+                  <ul>{report.plan.launchKit.launchChecklist.slice(0, 4).map((x) => <li key={x.task}>{x.task}</li>)}</ul>
+                </>
+              )}
               <h3>Your positioning</h3>
               <div className="summary">{report.plan.positioning.statement}</div>
               <h3>First 30 days</h3>
               <ul>{report.plan.executionPlan[0]?.tasks.map((x) => <li key={x.task}>{x.task} <span className="note">({x.hours}h)</span></li>)}</ul>
-              <p className="note">The PDF includes strategies, channel plan, full 30/60/90 plan, content pillars, a 12-week calendar, SEO keywords, ad angles, email sequence, swipe file and KPIs.</p>
+              <p className="note">The PDF has a clickable contents page and includes strategies, channel plan, full 30/60/90 plan, content pillars, a 12-week calendar, SEO keywords, ad angles, email sequence, swipe file and KPIs.</p>
             </>
           )}
 

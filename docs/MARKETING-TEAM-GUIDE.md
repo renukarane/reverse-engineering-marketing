@@ -14,8 +14,8 @@ A visitor pastes a competitor's website address. In under a minute, Marketing Sc
 
 | | Free teardown | Full plan |
 |---|---|---|
-| **Input** | Competitor URL and email | Competitor URL, your brand name, your domain, and optionally what you sell, who to, and your 90-day goal |
-| **Output** | ~8-page PDF of their strategy | ~19-page PDF: their strategy plus your plan |
+| **Input** | Competitor URL and email | Competitor URL, then one of two paths: **I have a website** (brand name and domain) or **Starting fresh** (what you sell and who to; name, city and budget optional) |
+| **Output** | ~9-page PDF of their strategy | ~22-page PDF: their strategy plus your plan |
 | **Price** | Free | ₹499 one-time via UPI (free during launch week) |
 
 **Inside the free teardown** (10 sections):
@@ -30,7 +30,11 @@ A visitor pastes a competitor's website address. In under a minute, Marketing Sc
 9. Their blind spots
 10. Quick wins for a smaller rival
 
+Every PDF opens with a clickable contents page: tap a section to jump to it.
+
 **The full plan adds:**
+- *I have a website:* "Where you stand today" and a "You vs them" table of 14 things we checked on both sites, each marked ahead, even or behind, with the fix
+- *Starting fresh:* a launch kit with name ideas (if no name yet), the pages to build, a homepage outline and a launch checklist; the first 30 days focus on launch foundations
 - positioning statement, differentiators and taglines
 - ideal customer and where they gather
 - 4–6 strategies built on what works for the competitor

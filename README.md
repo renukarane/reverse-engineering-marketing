@@ -5,8 +5,8 @@ Add your brand and domain and get a full end-to-end marketing plan built from it
 
 | | Free teardown | Full plan (Pro, one-time UPI payment) |
 |---|---|---|
-| Input | Competitor URL | Competitor URL + your brand name + your domain (+ optional niche, audience, goal) |
-| Output | ~7 page PDF | ~17 page PDF |
+| Input | Competitor URL | Competitor URL + either **I have a website** (brand name + domain) or **Starting fresh** (what you sell + who for, optional name, city, budget) |
+| Output | ~9 page PDF with clickable contents | ~22 page PDF with clickable contents |
 | Contents | Positioning, awareness and sophistication stage, audience, channel map, content engine, SEO footprint (incl. programmatic patterns), funnel and offer, tech stack, what works and whether it transfers, blind spots, quick wins | Everything in Free, plus positioning statement, ICP and where they gather, strategies (borrowed mechanism + our twist), prioritised channel plan, 30/60/90 execution plan with hours and kill rules, content pillars, 12-week content calendar, repurposing chain, article skeleton, SEO keywords, ad angles, 6-email sequence, swipe file, KPIs, risks |
 
 The analysis follows the copycat-marketing method: **copy the mechanism, never the material**,
@@ -23,8 +23,12 @@ about what transfers.
    - about 55 tools: ad pixels, email/CRM, analytics, CRO, CMS, payments, affiliate
    - sitemap section counts, programmatic `/pattern/{slug}` footprints and the publishing rate over the last 90 days
 2. **Teardown** (`src/lib/analyze.ts`, `src/lib/prompts.ts`): a free LLM interprets the observed signals into a structured JSON teardown.
-3. **Plan** (Pro): three smaller LLM calls (strategy, execution and content, then SEO/ads/email/swipe). They run one after another so they stay under free-tier tokens-per-minute limits. Any section a model skips is filled from the rule-based plan.
-4. **PDF** (`src/lib/pdf.tsx`): rendered server-side with `@react-pdf/renderer`, using built-in fonts so no network is needed.
+3. **Plan** (Pro) has two paths, chosen in the form:
+   - **I have a website:** your site is crawled too. `src/lib/compare.ts` builds a deterministic "You vs them" table (14 observed signals, each ahead/even/behind with a fix), and the plan opens with "Where you stand today".
+   - **Starting fresh:** no crawl of your site. The plan opens with a launch kit (name ideas if you have no name, pages to build, homepage outline, launch checklist), and days 1-30 become "Launch foundations".
+
+   Then four smaller LLM calls (current state or launch kit, strategy, execution and content, then SEO/ads/email/swipe). They run one after another so they stay under free-tier tokens-per-minute limits. Any section a model skips is filled from the rule-based plan.
+4. **PDF** (`src/lib/pdf.tsx`): rendered server-side with `@react-pdf/renderer`, using built-in fonts so no network is needed. A contents page lists every section with its real page number and links to it; page numbers are read back from the rendered PDF's named destinations, so it renders twice.
 
 **Works without any AI key.** If no provider is configured, or all of them fail, a rule-based engine (`src/lib/fallback.ts`) builds the report from observed signals only. That report is clearly labelled as rule-based.
 
@@ -178,8 +182,8 @@ curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
 
 ## API
 
-- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", email?, brandName?, domain?, niche?, audience?, goal?, accessCode?, payment?: { orderId, paymentId, signature } }` returns a report as JSON, plus `delivery: { status: "sent"|"already"|"pending"|"failed"|"none", to? }`. It returns 402 when payment is needed.
-- `POST /api/checkout` with `{ competitorUrl, brandName, domain, niche?, audience?, goal?, email? }` returns `{ orderId, amount, currency, keyId }` for Razorpay Checkout.
+- `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", email?, stage?: "existing"|"new", brandName?, domain?, niche?, location?, budget?, audience?, goal?, accessCode?, payment?: { orderId, paymentId, signature } }` returns a report as JSON, plus `delivery: { status: "sent"|"already"|"pending"|"failed"|"none", to? }`. It returns 402 when payment is needed.
+- `POST /api/checkout` with `{ competitorUrl, stage?, brandName?, domain?, niche?, audience?, location?, budget?, goal?, email? } (existing needs brandName + domain; new needs niche + audience)` returns `{ orderId, amount, currency, keyId }` for Razorpay Checkout.
 - `POST /api/report` with that report JSON returns the `application/pdf`.
 - `POST /api/razorpay/webhook` is the Razorpay webhook (`order.paid`). It builds and emails paid reports.
 - `GET /api/config` returns `{ proFreeBeta, proGate, price, aiEnabled, emailEnabled }`.
