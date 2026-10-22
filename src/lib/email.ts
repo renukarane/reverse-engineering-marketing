@@ -49,22 +49,40 @@ export function reportEmail(r: Report, appUrl: string): { subject: string; html:
   return { subject, html, text };
 }
 
-export async function sendReportEmail(to: string, r: Report, pdf: Buffer, appUrl: string): Promise<void> {
-  const { subject, html, text } = reportEmail(r, appUrl);
-  const slug = r.teardown.competitor.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "competitor";
+async function send(payload: { to: string; subject: string; html: string; text: string; attachments?: { filename: string; content: string }[] }): Promise<void> {
   const res = await fetch(`${apiBase()}/emails`, {
     method: "POST",
     headers: { authorization: `Bearer ${process.env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      from: process.env.EMAIL_FROM,
-      to: [to],
-      reply_to: process.env.EMAIL_REPLY_TO || undefined,
-      subject,
-      html,
-      text,
-      attachments: [{ filename: `${slug}-${r.tier === "pro" ? "full-plan" : "teardown"}.pdf`, content: pdf.toString("base64") }],
-    }),
+    body: JSON.stringify({ from: process.env.EMAIL_FROM, reply_to: process.env.EMAIL_REPLY_TO || undefined, ...payload, to: [payload.to] }),
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`Resend HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+}
+
+export async function sendReportEmail(to: string, r: Report, pdf: Buffer, appUrl: string): Promise<void> {
+  const { subject, html, text } = reportEmail(r, appUrl);
+  const slug = r.teardown.competitor.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "competitor";
+  await send({ to, subject, html, text, attachments: [{ filename: `${slug}-${r.tier === "pro" ? "full-plan" : "teardown"}.pdf`, content: pdf.toString("base64") }] });
+}
+
+export function confirmEmail(competitor: string, tier: "free" | "pro", link: string): { subject: string; html: string; text: string } {
+  const what = tier === "pro" ? "full marketing plan" : "teardown";
+  const subject = `Confirm your email to get your ${competitor} ${what}`;
+  const html = `<!doctype html><html><body style="margin:0;background:#f7f7fb;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#14161f">
+<div style="max-width:560px;margin:0 auto;padding:28px 20px">
+  <p style="font-weight:800;font-size:17px;margin:0 0 20px">Marketing <span style="color:#ff4d2e">Scholars</span></p>
+  <div style="background:#fff;border:1px solid #e3e5eb;border-radius:12px;padding:24px">
+    <h1 style="font-size:21px;line-height:1.3;margin:0 0 12px">One click and your report is on its way</h1>
+    <p style="margin:0 0 18px;line-height:1.55">Confirm this is your email and we will build your ${esc(what)} for <b>${esc(competitor)}</b> and send the PDF here, usually within two minutes.</p>
+    <p style="margin:0 0 18px"><a href="${esc(link)}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px">Confirm and send my report</a></p>
+    <p style="margin:0;font-size:13px;color:#5b6070;line-height:1.5">The link works for 24 hours. If the button does not work, paste this into your browser:<br><span style="word-break:break-all">${esc(link)}</span></p>
+  </div>
+  <p style="font-size:12px;color:#5b6070;line-height:1.5;margin:16px 4px 0">Did not ask for this? Ignore this email and nothing will be sent.</p>
+</div></body></html>`;
+  const text = `${subject}\n\nConfirm this is your email and we will build your ${what} for ${competitor} and email you the PDF:\n${link}\n\nThe link works for 24 hours. Did not ask for this? Ignore this email.`;
+  return { subject, html, text };
+}
+
+export async function sendConfirmEmail(to: string, competitor: string, tier: "free" | "pro", link: string): Promise<void> {
+  await send({ to, ...confirmEmail(competitor, tier, link) });
 }

@@ -1,7 +1,9 @@
 import { analyze } from "./analyze";
 import { alreadyEmailed, markEmailed, type PaidOrder } from "./billing";
 import { emailConfigured, sendReportEmail } from "./email";
+import { dbConfigured } from "./db";
 import { renderReportPdf } from "./pdf";
+import { fulfilPaidWithDb } from "./requests";
 import type { Report } from "./types";
 
 export function appUrl(fallbackOrigin?: string): string {
@@ -45,8 +47,13 @@ export async function emailPaidReportOnce(paid: PaidOrder, report: Report, origi
 }
 
 /** Webhook path: build the paid report from the order and email it. */
-export async function fulfilPaidOrder(paid: PaidOrder): Promise<void> {
+export async function fulfilPaidOrder(paid: PaidOrder, origin?: string): Promise<void> {
   if (!paid.email) return;
+  // With Supabase, the order's row is the exactly-once lock instead of payment notes.
+  if (dbConfigured()) {
+    await fulfilPaidWithDb(paid, appUrl(origin));
+    return;
+  }
   const key = `build:${paid.paymentId}`;
   if (inFlight.has(key)) return;
   inFlight.add(key);

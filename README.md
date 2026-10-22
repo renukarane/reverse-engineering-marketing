@@ -146,6 +146,40 @@ Each email address gets at most 3 free reports an hour.
 
 Until your domain is verified, Resend only delivers to your own account address.
 
+## Email-only delivery, request log and admin (Supabase)
+
+Once Supabase **and** Resend are configured, nobody sees a report on the page. Every report goes by email, and every request is logged.
+
+1. **Free teardown, or a full plan on an access code or free beta:** the visitor enters a competitor URL and their email.
+   - `POST /api/request` saves the request and emails a confirmation link (valid for 24 hours).
+   - The page says "Check your email".
+2. **The visitor clicks the link** and lands on `/confirm`.
+   - The page confirms with a `POST` to `/api/confirm`. Email scanners that open links do not trigger it.
+   - The report is built in the background and emailed as a PDF.
+3. **Paid full plan:** no extra confirmation step, because the payment itself is the commitment.
+   - After payment, the webhook or the success page claims the order's row and builds the plan. The row is claimed only once, so the PDF is emailed exactly once.
+   - The page says "Payment received, check your email".
+4. **`/admin`** is protected by `ADMIN_PASSWORD`, with a signed httpOnly cookie that lasts 7 days.
+   - **Test a report:** paste a competitor link (free or full plan, either scenario), view the HTML or download the PDF. Nothing is emailed or saved.
+   - **Requests:** every request with its status (waiting for confirmation, not paid, building, sent, failed) and errors.
+   - **Actions per request:** open the emailed PDF, resend it, or rebuild and send.
+
+**Status flow:**
+- `awaiting_confirmation` → `building` → `sent` or `failed`
+- paid: `awaiting_payment` → `building` → `sent` or `failed`
+
+A `building` row that is stuck for 5 minutes can be claimed again. The confirmation token is stored only as a SHA-256 hash. The table has Row Level Security on with no policies, so only the server's secret key can read it.
+
+Until Supabase is set, the site keeps the original flow: the report shows on the page and is also emailed.
+
+**Setup (about 5 minutes, free plan):**
+1. Go to [supabase.com/dashboard](https://supabase.com/dashboard), click **New project**, choose region **Mumbai (ap-south-1)**, and set a database password.
+2. Open **SQL Editor** → **New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql), and click **Run**.
+3. Open **Project Settings** → **API Keys** and copy:
+   - the **Project URL** → `SUPABASE_URL`
+   - the **secret** key (`sb_secret_...`, or the legacy `service_role` key) → `SUPABASE_SERVICE_ROLE_KEY`. Never put this key in browser code.
+4. In Vercel, add those two keys plus `ADMIN_PASSWORD`, then redeploy.
+
 ## Security
 
 The server fetches URLs that users type in, so every request goes through `src/lib/safeFetch.ts`:
@@ -184,6 +218,9 @@ curl -X POST localhost:3000/api/analyze -H 'content-type: application/json' \
 
 - `POST /api/analyze` with `{ competitorUrl, tier: "free"|"pro", email?, stage?: "existing"|"new", brandName?, domain?, niche?, location?, budget?, audience?, goal?, accessCode?, payment?: { orderId, paymentId, signature } }` returns a report as JSON, plus `delivery: { status: "sent"|"already"|"pending"|"failed"|"none", to? }`. It returns 402 when payment is needed.
 - `POST /api/checkout` with `{ competitorUrl, stage?, brandName?, domain?, niche?, audience?, location?, budget?, goal?, email? } (existing needs brandName + domain; new needs niche + audience)` returns `{ orderId, amount, currency, keyId }` for Razorpay Checkout.
-- `POST /api/report` with that report JSON returns the `application/pdf`.
+- `POST /api/report` with that report JSON returns the `application/pdf` (admin only once email-only delivery is on).
+- `POST /api/request` with the same fields as analyze (email required) saves the request and emails a confirmation link. It returns `{ status: "confirm_sent", to }`.
+- `POST /api/confirm` with `{ token }` returns `{ status: "building"|"already"|"expired"|"invalid" }` and emails the report.
+- Admin (cookie): `POST|DELETE /api/admin/login`, `GET /api/admin/requests?page=`, `POST /api/admin/resend { id, rebuild? }`, `GET /api/admin/pdf?id=`.
 - `POST /api/razorpay/webhook` is the Razorpay webhook (`order.paid`). It builds and emails paid reports.
-- `GET /api/config` returns `{ proFreeBeta, proGate, price, aiEnabled, emailEnabled }`.
+- `GET /api/config` returns `{ proFreeBeta, proGate, price, aiEnabled, emailEnabled, emailOnly }`.

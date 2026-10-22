@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { reportHtml } from "@/lib/reportHtml";
+import { downloadReportPdf, openReportHtml } from "@/lib/reportClient";
 import { track } from "@/lib/track";
 import type { Report, Tier } from "@/lib/types";
 
@@ -40,7 +40,10 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
   const [tier, setTier] = useState<Tier>("free");
   const [form, setForm] = useState({ competitorUrl: "", stage: "existing", brandName: "", domain: "", niche: "", audience: "", location: "", budget: "", goal: "", accessCode: "", email: "" });
   const fresh = form.stage === "new";
-  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "razorpay" | "code"; price: string; aiEnabled: boolean; emailEnabled: boolean } | null>(null);
+  const [cfg, setCfg] = useState<{ proFreeBeta: boolean; proGate: "free" | "razorpay" | "code"; price: string; aiEnabled: boolean; emailEnabled: boolean; emailOnly?: boolean } | null>(null);
+  const emailOnly = !!cfg?.emailOnly;
+  // Email-only delivery: what we told the visitor to look for in their inbox.
+  const [sent, setSent] = useState<{ kind: "confirm" | "paid" | "already"; to: string } | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [notice, setNotice] = useState("");
   const [paidProof, setPaidProof] = useState<Proof | null>(null);
@@ -78,6 +81,7 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (needsCheckout) return checkout();
+    if (emailOnly) return requestByEmail();
     return run({ ...form, tier });
   }
 
@@ -119,7 +123,8 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
           }
           setPaying(false);
           track("payment_success");
-          run({ payment: proof, tier: "pro" });
+          if (emailOnly) paidByEmail(proof);
+          else run({ payment: proof, tier: "pro" });
         },
         modal: {
           ondismiss: () => {
@@ -133,6 +138,46 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
     } catch (err) {
       setError((err as Error).message);
       setPaying(false);
+    }
+  }
+
+  // Saves the request and emails a confirmation link; the report follows by email.
+  async function requestByEmail() {
+    track("report_requested", { tier });
+    setError("");
+    setNotice("");
+    setSent(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...form, tier }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
+      setSent({ kind: "confirm", to: data.to });
+      track("confirm_email_sent", { tier });
+    } catch (err) {
+      setError((err as Error).message);
+      track("report_failed", { tier, reason: (err as Error).message.slice(0, 120) });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // After payment with email-only delivery: the server builds and emails the plan.
+  async function paidByEmail(proof: Proof) {
+    setError("");
+    setSent(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ payment: proof, tier: "pro" }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
+      setSent({ kind: data.delivery?.status === "already" ? "already" : "paid", to: data.delivery?.to ?? "" });
+      setPaidProof(null);
+      track("report_completed", { tier: "pro", engine: "email" });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -168,46 +213,19 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
     track("pdf_download", { tier: report.tier });
     setError("");
     setPdfBusy(true);
-    // iPhone/iPad Safari ignores programmatic downloads and blocks pop-ups opened
-    // after an await, so open the tab now, inside the click, and fill it in later.
-    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    const tab = ios ? window.open("", "_blank") : null;
     try {
-      const res = await fetch("/api/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(report) });
-      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Could not build the PDF (error ${res.status}).`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "marketing-report.pdf";
-      if (tab) {
-        tab.location.href = url;
-      } else {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        a.rel = "noopener";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      // Revoking straight away cancels the download in Safari and Firefox.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await downloadReportPdf(report);
     } catch (err) {
-      tab?.close();
       setError(`PDF download failed: ${(err as Error).message} Use "View report (save as PDF)" instead.`);
     } finally {
       setPdfBusy(false);
     }
   }
 
-  // Opens the printable HTML report in a new tab. Built synchronously in the
-  // click, so pop-up blockers allow it, and it needs no server.
   function viewReport() {
     if (!report) return;
     track("html_view", { tier: report.tier });
-    const url = URL.createObjectURL(new Blob([reportHtml(report, window.location.origin)], { type: "text/html" }));
-    const w = window.open(url, "_blank");
-    if (!w) window.location.href = url;
-    setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    openReportHtml(report);
   }
 
   function upgrade() {
@@ -235,7 +253,7 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
         <label htmlFor="competitorUrl">Competitor website</label>
         <input id="competitorUrl" required placeholder="competitor.com" value={form.competitorUrl} onChange={set("competitorUrl")} inputMode="url" autoComplete="off" />
 
-        {tier === "free" && cfg?.emailEnabled && (
+        {tier === "free" && (cfg?.emailEnabled || emailOnly) && (
           <>
             <label htmlFor="email">Your email <span className="opt">(we send the PDF here)</span></label>
             <input id="email" type="email" required placeholder="you@company.com" value={form.email} onChange={set("email")} autoComplete="email" />
@@ -330,24 +348,40 @@ export default function Generator({ copy }: { copy: GeneratorCopy }) {
           {paying
             ? "Opening UPI payment…"
             : loading
-              ? "Analysing…"
+              ? emailOnly ? "Sending…" : "Analysing…"
               : needsCheckout ? `Pay ${cfg?.price} with UPI` : tier === "pro" ? "Build my marketing plan" : copy.cta}
         </button>
         {needsCheckout && (
           <p className="note">
             One-time payment via UPI (Google Pay, PhonePe, Paytm, BHIM or any UPI app), secured by Razorpay.
-            {cfg?.emailEnabled ? " Your PDF is also emailed to you the moment payment completes." : " Your report starts building right after payment."}
+            {emailOnly ? " Your full plan is emailed to you as a PDF the moment payment completes." : cfg?.emailEnabled ? " Your PDF is also emailed to you the moment payment completes." : " Your report starts building right after payment."}
           </p>
         )}
         {notice && <p className="note" role="status">{notice}</p>}
-        {paidProof && !loading && !report && (
+        {emailOnly && !needsCheckout && !sent && (
+          <p className="note">We email you a link to confirm your address, then send the PDF report to your inbox.</p>
+        )}
+        {paidProof && !loading && !report && !sent && (
           <p className="note">
             You have a paid report from the last 7 days.{" "}
-            <button type="button" className="linkish" onClick={() => run({ payment: paidProof, tier: "pro" })}>Rebuild it</button>
+            <button type="button" className="linkish" onClick={() => (emailOnly ? paidByEmail(paidProof) : run({ payment: paidProof, tier: "pro" }))}>
+              {emailOnly ? "Email it to me" : "Rebuild it"}
+            </button>
           </p>
         )}
+        {sent && (
+          <div className="inbox" role="status">
+            <b>📩 Check your email</b>
+            {sent.kind === "confirm" && (
+              <p>We sent a confirmation link to <b>{sent.to}</b>. Click it and we will build your report and email you the PDF, usually within two minutes.</p>
+            )}
+            {sent.kind === "paid" && <p>Payment received. Your full plan is being built and will arrive at <b>{sent.to}</b> within a few minutes.</p>}
+            {sent.kind === "already" && <p>We already emailed your full plan to <b>{sent.to}</b>.</p>}
+            <p className="note">Not there? Check spam or promotions{sent.kind === "confirm" ? ", or make sure the address is right and send it again." : "."}</p>
+          </div>
+        )}
         {error && <p className="error" role="alert">{error}</p>}
-        {loading && (
+        {loading && !emailOnly && (
           <ul className="steps" aria-live="polite">
             {steps.map((s, i) => (
               <li key={s} className={i < step ? "done" : i === step ? "now" : ""}>{s}</li>
