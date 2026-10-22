@@ -21,12 +21,32 @@ const table = (head: string[], rows: string[][]) =>
         .join("")}</tbody></table></div>`
     : "";
 
+// Collected while sections render, then printed as the contents list.
+let tocItems: { id: string; num: string; name: string; part: string }[] = [];
+let tocPart = "Competitor teardown";
+
 const section = (title: string, body: string) => {
   if (!body.trim()) return "";
   const m = title.match(/^([0-9A-Z]{1,2})\.\s+(.*)$/);
   const num = m ? (/^\d+$/.test(m[1]) ? m[1].padStart(2, "0") : m[1]) : "";
-  return `<section><h2>${num ? `<span class="num">${num}</span>` : ""}${esc(m ? m[2] : title)}</h2><span class="rule"></span>${body}</section>`;
+  const name = m ? m[2] : title;
+  const id = `s-${tocPart}-${num}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  tocItems.push({ id, num, name, part: tocPart });
+  return `<section id="${id}"><h2>${num ? `<span class="num">${num}</span>` : ""}${esc(name)}</h2><span class="rule"></span>${body}</section>`;
 };
+
+function tocHtml(): string {
+  const parts = [...new Set(tocItems.map((x) => x.part))];
+  return `<nav class="toc" aria-label="Contents"><p class="kicker">CONTENTS</p>${parts
+    .map(
+      (p) =>
+        `<h3>${esc(p)}</h3><ol>${tocItems
+          .filter((x) => x.part === p)
+          .map((x) => `<li><a href="#${x.id}"><span class="tnum">${esc(x.num)}</span>${esc(x.name)}</a></li>`)
+          .join("")}</ol>`,
+    )
+    .join("")}</nav>`;
+}
 const h3 = (t: string, body: string) => (body.trim() ? `<h3>${esc(t)}</h3>${body}` : "");
 
 function teardownHtml(d: CompetitorTeardown): string {
@@ -93,18 +113,46 @@ function teardownHtml(d: CompetitorTeardown): string {
 }
 
 function planHtml(p: ProPlan, comp: string): string {
+  let n = 0;
+  const L = (title: string) => `${String.fromCharCode(65 + n++)}. ${title}`;
+  const statusPill = (st: string) => `<span class="pill ${st === "ahead" ? "active" : st === "even" ? "likely" : "absent"}">${esc(st)}</span>`;
   return [
     `<div class="part"><p class="kicker">PART TWO</p><h1>${esc(p.brandName)}: your marketing plan</h1><p class="muted">Built from what already works for ${esc(comp)}. Study it, then build yours.</p></div>`,
-    section("A. Executive summary", `<div class="callout">${esc(p.executiveSummary)}</div>`),
+    section(L("Executive summary"), `<div class="callout">${esc(p.executiveSummary)}</div>`),
+    p.currentState
+      ? section(
+          L("Where you stand today"),
+          `<div class="callout">${esc(p.currentState.summary)}</div>` +
+            h3("Fix these first", list(p.currentState.priorities)) +
+            (p.currentState.strengths.length ? h3("Already working for you", list(p.currentState.strengths)) : ""),
+        )
+      : "",
+    p.currentState?.compare.length
+      ? section(
+          L("You vs them, side by side"),
+          `<p class="muted">Observed on both public sites. Ahead / even / behind compares what each site shows, not quality.</p><div class="tw"><table><thead><tr><th>Area</th><th>${esc(p.brandName)}</th><th>${esc(comp)}</th><th></th><th>What to do</th></tr></thead><tbody>${p.currentState.compare
+            .map((r) => `<tr><td>${esc(r.area)}</td><td>${esc(r.you)}</td><td>${esc(r.them)}</td><td>${statusPill(r.status)}</td><td>${esc(r.action)}</td></tr>`)
+            .join("")}</tbody></table></div>`,
+        )
+      : "",
+    p.launchKit
+      ? section(
+          L("Launch kit"),
+          (p.launchKit.nameIdeas.length ? h3("Brand name ideas", list(p.launchKit.nameIdeas)) : "") +
+            h3("Website pages to build first", list(p.launchKit.websitePages.map((w) => `${w.page}: ${w.purpose}`))) +
+            h3("Homepage outline", `<ol>${p.launchKit.homepageOutline.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>`) +
+            h3("Launch checklist", table(["Task", "Why"], p.launchKit.launchChecklist.map((c) => [c.task, c.why]))),
+        )
+      : "",
     section(
-      "B. Positioning",
+      L("Positioning"),
       `<div class="card"><b>${esc(p.positioning.statement)}</b></div>` +
         h3("Differentiators", list(p.positioning.differentiators)) +
         h3("Messaging pillars", list(p.positioning.messagingPillars)) +
         h3("Tagline options", list(p.positioning.taglines)),
     ),
     section(
-      "C. Ideal customer",
+      L("Ideal customer"),
       kv([
         ["Primary", p.icp.primary],
         ["Secondary", p.icp.secondary],
@@ -114,7 +162,7 @@ function planHtml(p: ProPlan, comp: string): string {
         h3("Where they gather", list(p.icp.whereTheyGather)),
     ),
     section(
-      "D. Strategies",
+      L("Strategies"),
       p.strategies
         .map(
           (x, i) =>
@@ -127,28 +175,28 @@ function planHtml(p: ProPlan, comp: string): string {
         )
         .join(""),
     ),
-    section("E. Channel plan", table(["Channel", "Priority", "Goal", "Tactics", "KPI", "Effort"], p.channelPlan.map((c) => [c.channel, c.priority, c.goal, c.tactics.join("; "), c.kpi, c.effort]))),
+    section(L("Channel plan"), table(["Channel", "Priority", "Goal", "Tactics", "KPI", "Effort"], p.channelPlan.map((c) => [c.channel, c.priority, c.goal, c.tactics.join("; "), c.kpi, c.effort]))),
     section(
-      "F. 30 / 60 / 90 day execution plan",
+      L("30 / 60 / 90 day execution plan"),
       p.executionPlan.map((ph) => h3(`${ph.phase}: ${ph.focus}`, table(["Task", "Hours", "Metric", "Kill rule"], ph.tasks.map((x) => [x.task, x.hours, x.metric, x.killRule])))).join(""),
     ),
     section(
-      "G. Content plan",
+      L("Content plan"),
       p.contentPlan.pillars.map((pl) => `<div class="card"><b>${esc(pl.name)}</b><p class="muted">${esc(pl.purpose)}</p>${list(pl.topics)}</div>`).join("") +
         h3("12-week content calendar", table(["Week", "Title", "Format", "Channel", "Stage", "Keyword"], p.contentPlan.calendar.map((c) => [String(c.week), c.title, c.format, c.channel, c.funnelStage, c.keyword]))) +
         h3("Repurposing chain (one asset, many derivatives)", list(p.contentPlan.repurposingChain)) +
         h3("Article skeleton", list(p.contentPlan.template)),
     ),
     section(
-      "H. SEO plan",
+      L("SEO plan"),
       table(["Keyword", "Intent", "Page type"], p.seoPlan.keywords.map((k) => [k.keyword, k.intent, k.pageType])) +
         h3("Page types to build", list(p.seoPlan.pageTypesToBuild)) +
         kv([["Programmatic idea", p.seoPlan.programmaticIdea]]),
     ),
-    section("I. Paid ads plan", table(["Angle", "Hook", "Offer", "Format"], p.adsPlan.angles.map((a) => [a.angle, a.hook, a.offer, a.format])) + kv([["Budget guidance", p.adsPlan.budgetGuidance]])),
-    section("J. Email plan", kv([["Lead magnet", p.emailPlan.leadMagnet]]) + table(["Day", "Subject", "Goal"], p.emailPlan.sequence.map((e) => [String(e.day), e.subject, e.goal]))),
+    section(L("Paid ads plan"), table(["Angle", "Hook", "Offer", "Format"], p.adsPlan.angles.map((a) => [a.angle, a.hook, a.offer, a.format])) + kv([["Budget guidance", p.adsPlan.budgetGuidance]])),
+    section(L("Email plan"), kv([["Lead magnet", p.emailPlan.leadMagnet]]) + table(["Day", "Subject", "Goal"], p.emailPlan.sequence.map((e) => [String(e.day), e.subject, e.goal]))),
     section(
-      "K. Swipe file (mechanisms, not material)",
+      L("Swipe file (mechanisms, not material)"),
       p.swipeFile
         .map(
           (w) =>
@@ -160,14 +208,19 @@ function planHtml(p: ProPlan, comp: string): string {
         )
         .join(""),
     ),
-    section("L. Gaps to exploit", list(p.gapsToExploit)),
-    section("M. KPIs", table(["Metric", "Day 30", "Day 90"], p.kpis.map((k) => [k.metric, k.target30, k.target90]))),
-    section("N. Risks and honest caveats", list(p.risks)),
+    section(L("Gaps to exploit"), list(p.gapsToExploit)),
+    section(L("KPIs"), table(["Metric", "Day 30", "Day 90"], p.kpis.map((k) => [k.metric, k.target30, k.target90]))),
+    section(L("Risks and honest caveats"), list(p.risks)),
   ].join("");
 }
 
 export function reportHtml(r: Report, appUrl: string): string {
+  tocItems = [];
+  tocPart = "Competitor teardown";
   const d = r.teardown;
+  const teardownBody = teardownHtml(d);
+  tocPart = "Your plan";
+  const planBody = r.plan ? planHtml(r.plan, d.competitor) : "";
   const date = d.generatedAt.slice(0, 10);
   const title = r.plan ? `${r.plan.brandName} vs ${d.competitor}` : d.competitor;
   const upsell = r.plan
@@ -220,6 +273,11 @@ export function reportHtml(r: Report, appUrl: string): string {
   .part .kicker { color:var(--yellow); border-color:var(--yellow); } .part h1 { color:#fff; font-size:30px; } .part .muted { color:#d9d3c7; }
   .upsell { margin-top:30px; background:var(--ink); color:#fff; border-radius:10px; padding:22px; border-left:none; }
   .upsell h2 { margin-top:0; color:#fff; } .upsell a { display:inline-block; margin-top:6px; background:var(--brand); color:#fff; padding:10px 16px; border-radius:8px; font-weight:800; text-decoration:none; }
+  .toc { border:1.5px solid var(--ink); border-radius:8px; padding:16px 18px; margin:0 0 10px; background:var(--paper); }
+  .toc h3 { color:var(--brand); margin:12px 0 4px; } .toc ol { list-style:none; padding:0; margin:0; columns:2; column-gap:24px; }
+  .toc li { break-inside:avoid; margin:0 0 3px; } .toc a { color:var(--ink); text-decoration:none; } .toc a:hover { color:var(--brand); }
+  .toc .tnum { display:inline-block; min-width:26px; font-weight:800; color:var(--brand); font-size:12px; }
+  @media (max-width:600px) { .toc ol { columns:1; } }
   footer { color:var(--muted); font-size:12px; margin-top:30px; border-top:1.5px solid var(--ink); padding-top:10px; }
   @media (max-width:600px) { dl { grid-template-columns:1fr; } dt { margin-top:6px; } main { box-shadow:4px 4px 0 var(--ink); } }
   @page { size:A4; margin:14mm 13mm; }
@@ -249,13 +307,14 @@ export function reportHtml(r: Report, appUrl: string): string {
     </div>
     ${kv([
       ["Competitor", d.url],
-      ["Your brand", r.plan ? `${r.plan.brandName} (${r.plan.domain})` : ""],
+      ["Your brand", r.plan ? (r.plan.domain ? `${r.plan.brandName} (${r.plan.domain})` : `${r.plan.brandName} (fresh start, no website yet)`) : ""],
       ["Generated", date],
       ["Analysis engine", d.engine],
     ])}
   </div>
-  ${teardownHtml(d)}
-  ${r.plan ? planHtml(r.plan, d.competitor) : upsell}
+  ${tocHtml()}
+  ${teardownBody}
+  ${r.plan ? planBody : upsell}
   <footer>Method: public pages only (homepage, pricing, blog, robots.txt, sitemap, llms.txt). Observations are labelled; inferences are marked as such. Traffic and spend are never stated as numbers. Copy the mechanism, never the material. Marketing Scholars, ${esc(date)}.</footer>
 </main>
 </body></html>`;

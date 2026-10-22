@@ -100,10 +100,32 @@ export interface CompetitorTeardown {
   quickWins: string[];
 }
 
+/** Existing brand with a website, or a fresh start with no site or brand yet. */
+export type BrandStage = "existing" | "new";
+
+/** One row of the deterministic "you vs them" comparison (existing brands). */
+export interface CompareRow {
+  area: string;
+  you: string;
+  them: string;
+  status: "ahead" | "even" | "behind";
+  action: string;
+}
+
 export interface ProPlan {
   brandName: string;
   domain: string;
+  stage: BrandStage;
   executiveSummary: string;
+  /** Existing brands: where they stand today against the competitor. */
+  currentState?: { summary: string; strengths: string[]; priorities: string[]; compare: CompareRow[] };
+  /** Fresh starts: what to set up before marketing can work. */
+  launchKit?: {
+    nameIdeas: string[];
+    websitePages: { page: string; purpose: string }[];
+    homepageOutline: string[];
+    launchChecklist: { task: string; why: string }[];
+  };
   positioning: { statement: string; differentiators: string[]; messagingPillars: string[]; taglines: string[] };
   icp: { primary: string; secondary: string; pains: string[]; triggers: string[]; whereTheyGather: string[] };
   strategies: { name: string; objective: string; borrowedMechanism: string; ourTwist: string; whyItWillWork: string }[];

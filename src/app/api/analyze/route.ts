@@ -5,6 +5,7 @@ import { analyze } from "@/lib/analyze";
 import { alreadyEmailed, paidFromProof, proGate, webhookConfigured, type PaidOrder } from "@/lib/billing";
 import { emailPaidReportOnce, emailReport } from "@/lib/deliver";
 import { emailConfigured } from "@/lib/email";
+import { validateBrand } from "@/lib/brandInput";
 import { rateLimit } from "@/lib/rateLimit";
 import { FetchBlockedError, normalizeUrl } from "@/lib/safeFetch";
 
@@ -15,11 +16,13 @@ const field = (max: number) => z.string().trim().max(max).optional();
 const Body = z.object({
   competitorUrl: z.string().trim().max(300).default(""),
   tier: z.enum(["free", "pro"]).default("free"),
+  stage: z.enum(["existing", "new"]).optional(),
   brandName: field(80),
   domain: field(200),
   niche: field(160),
   audience: field(200),
   goal: field(200),
+  location: field(80),
   budget: field(80),
   accessCode: field(100),
   payment: z.object({ orderId: z.string().max(60), paymentId: z.string().max(60), signature: z.string().max(128) }).optional(),
@@ -58,14 +61,14 @@ export async function POST(req: Request) {
 
   try {
     normalizeUrl(b.competitorUrl);
-    if (b.tier === "pro") {
-      if (!b.brandName || !b.domain) return NextResponse.json({ error: "Brand name and your domain are required for the full report." }, { status: 400 });
-      normalizeUrl(b.domain);
-    }
   } catch (e) {
     const msg = e instanceof FetchBlockedError ? e.message : "That does not look like a valid public URL.";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
+
+  const checked = b.tier === "pro" ? validateBrand(b) : null;
+  if (checked && "error" in checked) return NextResponse.json({ error: checked.error }, { status: 400 });
+  const brand = checked && "brand" in checked ? checked.brand : undefined;
 
   if (b.tier === "pro" && !paid && proGate() !== "free" && !validAccessCode(b.accessCode)) {
     return NextResponse.json(
@@ -86,7 +89,7 @@ export async function POST(req: Request) {
     const report = await analyze({
       competitorUrl: b.competitorUrl,
       tier: b.tier,
-      brand: b.tier === "pro" ? { brandName: b.brandName!, domain: b.domain!, niche: b.niche, audience: b.audience, goal: b.goal, budget: b.budget } : undefined,
+      brand,
     });
     const origin = new URL(req.url).origin;
     let delivery: Delivery = { status: "none" };

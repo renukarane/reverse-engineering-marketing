@@ -1,4 +1,4 @@
-import type { CompetitorTeardown, SiteSignals } from "./types";
+import type { BrandStage, CompareRow, CompetitorTeardown, SiteSignals } from "./types";
 
 // Prompts encode the copycat-marketing method: copy the mechanism, never the material;
 // separate observation from inference; count, do not impress; be honest about what
@@ -104,18 +104,27 @@ function teardownBrief(t: CompetitorTeardown): string {
 }
 
 export interface BrandInput {
+  stage: BrandStage;
+  /** May be empty for a fresh start; the plan then suggests names. */
   brandName: string;
+  /** Empty for a fresh start. */
   domain: string;
   niche?: string;
   audience?: string;
+  location?: string;
   goal?: string;
   budget?: string;
-  team?: string;
 }
 
 function brandBlock(b: BrandInput, own: SiteSignals | null): string {
-  return `OUR BRAND: ${JSON.stringify(b)}
-${own ? digest(own, "OUR SITE") : "OUR SITE: could not be read, rely on the brand inputs."}`;
+  if (b.stage === "new") {
+    return `OUR BRAND: a FRESH START. No website and no marketing yet${b.brandName ? `; working name "${b.brandName}"` : "; no name yet"}.
+Inputs: ${JSON.stringify({ sells: b.niche, audience: b.audience, market: b.location, goal: b.goal, monthlyBudget: b.budget })}
+Plan for launching from zero: foundations first (site, tracking, email capture, one channel), then growth. Do not assume an existing audience, traffic or content.`;
+  }
+  return `OUR BRAND: an EXISTING business with a website. ${JSON.stringify({ brandName: b.brandName, domain: b.domain, sells: b.niche, audience: b.audience, goal: b.goal, monthlyBudget: b.budget })}
+${own ? digest(own, "OUR SITE") : "OUR SITE: could not be read, rely on the brand inputs."}
+Plan for growing what exists: fix the biggest gaps against the competitor first, reuse assets we already have.`;
 }
 
 const PLAN_A_SCHEMA = `{
@@ -146,9 +155,46 @@ const PLAN_C_SCHEMA = `{
  "swipeFile": [{"mechanism": "one sentence", "whyItWorks": "", "blankVersion": "structure with every specific removed", "yourVersion": "written for our brand"}]
 }`;
 
-export function planPrompts(t: CompetitorTeardown, b: BrandInput, own: SiteSignals | null) {
+const PLAN_D_EXISTING_SCHEMA = `{
+ "currentState": {"summary": "4-6 sentences: where our brand stands today against the competitor, from the comparison", "strengths": ["what we already do as well or better"], "priorities": ["the 3-5 gaps to close first, in order, each with why"]}
+}`;
+
+const PLAN_D_NEW_SCHEMA = `{
+ "launchKit": {
+   "nameIdeas": ["5 original brand name ideas with a 3-6 word reason each; empty array if we already have a name"],
+   "websitePages": [{"page": "", "purpose": "why this page exists and what it must convert"}],
+   "homepageOutline": ["section-by-section homepage outline, in order, borrowing the competitor's argument order where it works"],
+   "launchChecklist": [{"task": "concrete setup task", "why": ""}]
+ }
+}`;
+
+export function planPrompts(t: CompetitorTeardown, b: BrandInput, own: SiteSignals | null, compare: CompareRow[] = []) {
   const ctx = `COMPETITOR TEARDOWN (already analysed):\n${teardownBrief(t)}\n\n${brandBlock(b, own)}`;
+  const d =
+    b.stage === "new"
+      ? {
+          key: "D",
+          system: METHOD,
+          user: `We are launching from zero. Write the launch kit: ${b.brandName ? "no name ideas (we have a name)" : "5 name ideas"}, 5-7 website pages to build first, a 8-10 section homepage outline, and a 10-14 item launch checklist (domain, site, analytics, pixels, Google Business Profile if local, social handles, email capture, first lead magnet, first content). Keep it doable by one person in 30 days.
+
+${ctx}
+
+Return JSON with exactly this schema:
+${PLAN_D_NEW_SCHEMA}`,
+        }
+      : {
+          key: "D",
+          system: METHOD,
+          user: `Read this observed side-by-side of OUR site vs the COMPETITOR and write where we stand today. Only use what the comparison shows.
+COMPARISON (observed, JSON): ${JSON.stringify(compare)}
+
+${ctx}
+
+Return JSON with exactly this schema:
+${PLAN_D_EXISTING_SCHEMA}`,
+        };
   return [
+    d,
     {
       key: "A",
       system: METHOD,

@@ -1,4 +1,5 @@
 import type { BrandInput } from "./prompts";
+import type { CompareRow } from "./types";
 import type { CompetitorTeardown, ProPlan, SiteSignals } from "./types";
 
 // Rule-based engine used when no AI key is set or every provider fails. It only
@@ -186,8 +187,8 @@ export function ruleTeardown(s: SiteSignals): Omit<CompetitorTeardown, "competit
   };
 }
 
-export function rulePlan(t: CompetitorTeardown, b: BrandInput, own: SiteSignals | null): Omit<ProPlan, "brandName" | "domain"> {
-  const brand = b.brandName;
+export function rulePlan(t: CompetitorTeardown, b: BrandInput, own: SiteSignals | null, compare: CompareRow[] = []): Omit<ProPlan, "brandName" | "domain"> {
+  const brand = b.brandName || "Your brand";
   const niche = b.niche || own?.home.h1[0] || "your category";
   const aud = b.audience || t.positioning.targetAudience || "your best-fit customers";
   const comp = t.competitor;
@@ -202,7 +203,8 @@ export function rulePlan(t: CompetitorTeardown, b: BrandInput, own: SiteSignals 
     const p = pillars[i % 4];
     return { week: i + 1, title: p.topics[Math.floor(i / 4)], format: ["blog", "carousel", "case study", "video"][i % 4], channel: ["Blog + LinkedIn", "LinkedIn", "Blog + Email", "YouTube + Shorts"][i % 4], funnelStage: ["TOFU", "MOFU", "BOFU", "TOFU"][i % 4], keyword: themes[i % themes.length].toLowerCase().slice(0, 80) };
   });
-  return {
+  const plan: Omit<ProPlan, "brandName" | "domain"> = {
+    stage: b.stage,
     executiveSummary: `${brand} will compete with ${comp} by borrowing the mechanisms that visibly work for them (${t.whatWorks.slice(0, 2).map((w) => w.tactic.toLowerCase()).join("; ") || "search content and a low-friction entry offer"}) and by owning the gaps they leave open (${t.gaps.slice(0, 2).join(" ") || "segments and formats they ignore"}). We start with the cheapest high-confidence channels: search content and email, then add one social channel. We do not copy anything that depends on their budget or brand. This plan was produced by the rule-based engine; add a free AI key for a fully tailored version.`,
     positioning: {
       statement: `For ${aud} who need ${niche} without the trade-offs of ${comp}, ${brand} is the focused alternative that ${b.goal ? `helps you ${b.goal}` : "delivers results faster and more transparently"}.`,
@@ -299,6 +301,82 @@ export function rulePlan(t: CompetitorTeardown, b: BrandInput, own: SiteSignals 
       { metric: "Articles published", target30: "8", target90: "24" },
       { metric: "Demo/trial conversions from content", target30: "Baseline", target90: "2x baseline" },
     ],
+  };
+  return b.stage === "new" ? withLaunchKit(plan, b, t) : withCurrentState(plan, b, t, compare);
+}
+
+function withCurrentState(plan: Omit<ProPlan, "brandName" | "domain">, b: BrandInput, t: CompetitorTeardown, compare: CompareRow[]) {
+  const behind = compare.filter((r) => r.status === "behind");
+  const ahead = compare.filter((r) => r.status === "ahead" || r.status === "even");
+  return {
+    ...plan,
+    currentState: {
+      summary: compare.length
+        ? `Against ${t.competitor}, ${b.brandName} is behind on ${behind.length} of ${compare.length} observable areas and level or ahead on ${ahead.length}. The fastest wins are the gaps that cost little to close: tracking, email capture and an entry offer. Search and content gaps take months, so start them now.`
+        : `We could not read ${b.domain}, so this plan relies on the competitor teardown and your inputs.`,
+      strengths: ahead.slice(0, 5).map((r) => `${r.area}: ${r.you}`),
+      priorities: behind.slice(0, 5).map((r) => `${r.area}: ${r.action}`),
+      compare,
+    },
+  };
+}
+
+function withLaunchKit(plan: Omit<ProPlan, "brandName" | "domain">, b: BrandInput, t: CompetitorTeardown) {
+  const niche = b.niche || "your offer";
+  const aud = b.audience || "your customers";
+  const local = !!b.location;
+  const executionPlan = [
+    {
+      phase: "Days 1-30",
+      focus: "Launch foundations",
+      tasks: [
+        { task: "Domain, professional email and a 6-page site (see the launch kit)", hours: "16", metric: "Site live", killRule: "n/a" },
+        { task: "Analytics, Search Console and Meta pixel installed", hours: "3", metric: "Tracking live", killRule: "n/a" },
+        { task: "Lead magnet and 6-email welcome sequence", hours: "10", metric: "Opt-in rate above 2%", killRule: "Swap the magnet if under 1% after 300 visitors" },
+        { task: "10 customer conversations; record their words", hours: "8", metric: "10 calls done", killRule: "n/a" },
+        { task: "Publish the first 4 articles from the calendar", hours: "12", metric: "Indexed pages", killRule: "n/a" },
+      ],
+    },
+    ...plan.executionPlan.slice(1),
+  ];
+  return {
+    ...plan,
+    executionPlan,
+    launchKit: {
+      nameIdeas: b.brandName ? [] : [`${niche.split(" ")[0]} Studio`, `Clear ${niche.split(" ")[0]}`, `${(b.location || "Next").split(" ")[0]} ${niche.split(" ")[0]} Co`].map((x) => x.replace(/\b\w/g, (c) => c.toUpperCase())),
+      websitePages: [
+        { page: "Home", purpose: `Say who it's for and the result in one line, prove it, one CTA for ${aud}.` },
+        { page: "Offer / pricing", purpose: "Show what they get and a starting price; answer the top 3 objections." },
+        { page: "About / founder story", purpose: "Why you started; trust for a new brand." },
+        { page: "Lead magnet page", purpose: "A free checklist or guide that captures emails from day one." },
+        { page: "Contact / WhatsApp", purpose: "The fastest way for an interested buyer to reach you." },
+        { page: "Blog (first 3 posts)", purpose: "Answer the questions buyers search before they buy." },
+      ],
+      homepageOutline: [
+        "Headline: the outcome for your audience, in their words",
+        "Subheadline: how you deliver it (the mechanism)",
+        "Primary CTA (one action)",
+        "Proof: early testimonials, founder credentials or numbers",
+        "The problem, in the customer's words",
+        "How it works in 3 steps",
+        "What's included / pricing preview",
+        `Objections answered (borrow the order ${t.competitor} uses where it fits)`,
+        "FAQ",
+        "Final CTA",
+      ],
+      launchChecklist: [
+        { task: "Buy the domain and set up a professional email", why: "Trust and deliverability." },
+        { task: "Build the 6 pages above on a simple site builder", why: "Ship in days, not weeks." },
+        { task: "Install analytics, Search Console and the Meta pixel", why: "Measure from the first visitor; build retargeting audiences early." },
+        { task: "Create the lead magnet and a 6-email welcome sequence", why: "Every visitor becomes a contact you own." },
+        ...(local ? [{ task: "Create and verify a Google Business Profile", why: "Local searches convert fastest." }] : []),
+        { task: "Claim handles on LinkedIn, Instagram and YouTube; pick ONE to post on", why: "Consistency beats coverage." },
+        { task: "Write 3 blog posts from the content calendar", why: "Start the search clock early." },
+        { task: "Talk to 10 potential customers and record their exact words", why: "Your copy should use their language." },
+        { task: "Collect 3 testimonials (even from pilots or free trials)", why: "Proof is the biggest gap for a new brand." },
+        { task: "Launch to your personal network with a clear ask", why: "Your first customers come from people who already trust you." },
+      ],
+    },
   };
 }
 
